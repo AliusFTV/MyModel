@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ${OS:-} = Windows_NT ]]; then
+    echo 'error: Please install grit using Windows Subsystem for Linux'
+    exit 1
+fi
+
+# Reset
+Color_Off=''
+
+# Regular Colors
+Red=''
+Green=''
+Dim='' # White
+
+# Bold
+Bold_White=''
+Bold_Green=''
+
+if [[ -t 1 ]]; then
+    # Reset
+    Color_Off='\033[0m' # Text Reset
+
+    # Regular Colors
+    Red='\033[0;31m'   # Red
+    Green='\033[0;32m' # Green
+    Dim='\033[0;2m'    # White
+
+    # Bold
+    Bold_Green='\033[1;32m' # Bold Green
+    Bold_White='\033[1m'    # Bold White
+fi
+
+error() {
+    echo -e "${Red}error${Color_Off}:" "$@" >&2
+    exit 1
+}
+
+info() {
+    echo -e "${Dim}$@ ${Color_Off}"
+}
+
+info_bold() {
+    echo -e "${Bold_White}$@ ${Color_Off}"
+}
+
+success() {
+    echo -e "${Green}$@ ${Color_Off}"
+}
+
+case $(uname -s) in
+'Darwin')
+    os=macos
+    ;;
+'Linux' | *)
+    os=linux
+    ;;
+esac
+
+case $(uname -m) in
+'arm64' | 'aarch64')
+    arch=arm64
+    ;;
+'x86_64' | *)
+    arch=x64
+    ;;
+esac
+
+KEYGEN_ACCOUNT="custodian-dev"
+grit_uri="https://api.keygen.sh/v1/accounts/$KEYGEN_ACCOUNT/artifacts/marzano-$os-$arch"
+
+install_env=GRIT_INSTALL
+bin_env=\$$install_env/bin
+
+install_dir=${!install_env:-$HOME/.grit}
+bin_dir=$install_dir/bin
+exe=$bin_dir/grit
+info=$install_dir/info.json
+manifest=$install_dir/manifests.json
+
+if [[ ! -d $bin_dir ]]; then
+    mkdir -p "$bin_dir" ||
+        error "Failed to create install directory \"$bin_dir\""
+fi
+
+curl --fail --silent --output "$info" "$grit_uri"
+
+extract_release() {
+    cat $1 | \
+        grep -o '"data".*' | \
+        grep -o '"relationships".*' | \
+        grep -o '"release".*' | \
+        grep -o '"data".*' | \
+        grep -o '"id":"[^"]*"' | \
+        cut -d'"' -f4
+}
+
+release=$(extract_release "$info")
+
+rm -f "$info"
+
+cat <<EOF > "$manifest"
+{
+  "installPath": "$install_dir",
+  "binaries": {
+    "marzano": {
+      "name": "marzano",
+      "release": "$release"
+    }
+  }
+}
+EOF
+
+curl --fail --location --progress-bar --output "$exe.tgz" "$grit_uri" ||
+    error "Failed to download grit from \"$grit_uri\""
+
+tar -xzf "$exe.tgz" -C "$bin_dir" ||
+    error 'Failed to extract grit'
+
+mv "$bin_dir/marzano" "$exe" ||
+    error 'Failed to move extracted grit to destination'
+
+chmod +x "$exe" ||
+    error 'Failed to set permissions on grit executable'
+
+tildify() {
+    if [[ $1 = $HOME/* ]]; then
+        local replacement=\~/
+
+        echo "${1/$HOME\//$replacement}"
+    else
+        echo "$1"
+    fi
+}
+
+success "grit was installed successfully to $Bold_Green$(tildify "$exe")"
+
+refresh_command=''
+
+tilde_bin_dir=$(tildify "$bin_dir")
+quoted_install_dir=\"${install_dir//\"/\\\"}\"
+
+if [[ $quoted_install_dir = \"$HOME/* ]]; then
+    quoted_install_dir=${quoted_install_dir/$HOME\//\$HOME/}
+fi
+
+echo
+
+case $(basename "$SHELL") in
+fish)
+    commands=(
+        "set --export $install_env $quoted_install_dir"
+        "set --export PATH $bin_env \$PATH"
+    )
+
+    fish_config=$HOME/.config/fish/config.fish
+    tilde_fish_config=$(tildify "$fish_config")
+
+    if [[ -w $fish_config ]]; then
+        {
+            echo -e '\n# grit'
+
+            for command in "${commands[@]}"; do
+                echo "$command"
+            done
+        } >>"$fish_config"
+
+        info "Added \"$tilde_bin_dir\" to \$PATH in \"$tilde_fish_config\""
+
+        refresh_command="source $tilde_fish_config"
+    else
+        echo "Manually add the directory to $tilde_fish_config (or similar):"
+
+        for command in "${commands[@]}"; do
+            info_bold "  $command"
+        done
+    fi
+    ;;
+zsh)
+    commands=(
+        "export $install_env=$quoted_install_dir"
+        "export PATH=\"$bin_env:\$PATH\""
+    )
+
+    zsh_config=$HOME/.zshrc
+    tilde_zsh_config=$(tildify "$zsh_config")
+
+    if [[ -w $zsh_config ]]; then
+        {
+            echo -e '\n# grit'
+
+            for command in "${commands[@]}"; do
+                echo "$command"
+            done
+        } >>"$zsh_config"
+
+        info "Added \"$tilde_bin_dir\" to \$PATH in \"$tilde_zsh_config\""
+
+        refresh_command="exec $SHELL"
+    else
+        echo "Manually add the directory to $tilde_zsh_config (or similar):"
+
+        for command in "${commands[@]}"; do
+            info_bold "  $command"
+        done
+    fi
+    ;;
+bash)
+    commands=(
+        "export $install_env=$quoted_install_dir"
+        "export PATH=$bin_env:\$PATH"
+    )
+
+    bash_configs=(
+        "$HOME/.bashrc"
+        "$HOME/.bash_profile"
+    )
+
+    if [[ ${XDG_CONFIG_HOME:-} ]]; then
+        bash_configs+=(
+            "$XDG_CONFIG_HOME/.bash_profile"
+            "$XDG_CONFIG_HOME/.bashrc"
+            "$XDG_CONFIG_HOME/bash_profile"
+            "$XDG_CONFIG_HOME/bashrc"
+        )
+    fi
+
+    set_manually=true
+    for bash_config in "${bash_configs[@]}"; do
+        tilde_bash_config=$(tildify "$bash_config")
+
+        if [[ -w $bash_config ]]; then
+            {
+                echo -e '\n# grit'
+
+                for command in "${commands[@]}"; do
+                    echo "$command"
+                done
+            } >>"$bash_config"
+
+            info "Added \"$tilde_bin_dir\" to \$PATH in \"$tilde_bash_config\""
+
+            refresh_command="source $bash_config"
+            set_manually=false
+            break
+        fi
+    done
+
+    if [[ $set_manually = true ]]; then
+        echo "Manually add the directory to $tilde_bash_config (or similar):"
+
+        for command in "${commands[@]}"; do
+            info_bold "  $command"
+        done
+    fi
+    ;;
+*)
+    echo 'Manually add the directory to ~/.bashrc (or similar):'
+    info_bold "  export $install_env=$quoted_install_dir"
+    info_bold "  export PATH=\"$bin_env:\$PATH\""
+    ;;
+esac
+
+echo
+info "To get started, run:"
+echo
+
+if [[ $refresh_command ]]; then
+    info_bold "  $refresh_command"
+fi
+
+info_bold "  grit --help"
