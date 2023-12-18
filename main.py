@@ -1,5 +1,5 @@
 import threading
-from PyQt5.QtWidgets import QWidget, QPushButton, QLabel, QVBoxLayout, QGraphicsOpacityEffect, QMainWindow
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from PyQt5.QtCore import QTimer, Qt
 from tamagotchi_worker import TamagotchiWorker
 from time_sync import TimeSync

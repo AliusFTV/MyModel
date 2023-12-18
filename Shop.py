@@ -1,4 +1,3 @@
-from PyQt5.QtWidgets import QLabel, QPushButton
 from PyQt5.QtCore import Qt
 from SAL import Item
 from custom_menu import CustomMenuHelper, DraggableButton, DraggableLabel
