@@ -28,7 +28,6 @@ class TamagotchiApp(QWidget):
         self.tamagotchi_state = self.default_state
         self.tamagotchi_worker = TamagotchiWorker(self)
         self.save_manager = SaveManager(self)
-        self.load_save()
 
         self.time_sync = TimeSync()
         self.state_lock = threading.Lock()
@@ -50,6 +49,7 @@ class TamagotchiApp(QWidget):
             self.v_layout.addWidget(button)
             button.setFixedSize(400, 30)
         self.v_layout.setSpacing(0)
+        self.load_save()
 
     def sync_time(self):
         formatted_time = self.time_sync.sync_time()
