@@ -43,7 +43,8 @@ class SaveManager:
         except FileNotFoundError:
             tamagotchi_state = default_state
             inventory = []
-         return tamagotchi_state, inventory
+            button_positions = []
+        return tamagotchi_state, inventory, button_positions
 
     def save_button_positions(self):
         return [ButtonState(button.x(), button.y(), button.unique_id).to_dict() for button in
