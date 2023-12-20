@@ -1,5 +1,5 @@
 import json as js
-
+from uuid import UUID
 class Item:
     def __init__(self, name):
         self.name = name
@@ -8,25 +8,25 @@ class Item:
         return {'name': self.name}
 
 class ButtonState:
-    def __init__(self, x, y):
+    def __init__(self, x, y, button_id):
         self.x = x
         self.y = y
+        self.id = button_id
 
     def to_dict(self):
-        return {'x': self.x, 'y': self.y}
+        return {'x': self.x, 'y': self.y, 'id': str(self.id)}
 
 class SaveManager:
     def __init__(self, tamagotchi_app):
         self.tamagotchi_app = tamagotchi_app
-        self.buttons = self.tamagotchi_app.buttons
         global save_path
         save_path = "C:/Users/alius/PycharmProjects/pythonProject/tg_save.json"
 
-    def save_state(self, tamagotchi_state, inventory, buttons):
+    def save_state(self, tamagotchi_state, inventory, button_positions):
         state_to_save = dict(
             tg_state=tamagotchi_state,
             inventory=[item.to_dict() for item in inventory],
-            button_positions=self.save_button_positions(buttons)
+            button_positions=button_positions
         )
         with open(save_path, "w") as file:
             js.dump(state_to_save, file)
@@ -43,10 +43,16 @@ class SaveManager:
         except FileNotFoundError:
             tamagotchi_state = default_state
             inventory = []
-            return tamagotchi_state, inventory
-    def save_button_positions(self, buttons):
-        return [ButtonState(button.x(), button.y()).to_dict() for button in buttons]
+         return tamagotchi_state, inventory
 
-    def load_button_positions(self, positions):
-        for DraggableButton, position in zip(self.buttons, positions):
-            DraggableButton.move(position['x'], position['y'])
+    def save_button_positions(self):
+        return [ButtonState(button.x(), button.y(), button.unique_id).to_dict() for button in
+                self.tamagotchi_app.buttons]
+
+    def load_button_positions(self, positions, buttons):
+        for position in positions:
+            button_id = UUID(position['id'])
+            for button in buttons:
+                if button.unique_id == button_id:
+                    button.move(position['x'], position['y'])
+                    break

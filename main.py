@@ -23,6 +23,7 @@ class TamagotchiApp(QWidget):
         self.buttons = []
         self.original_widgets = []
         self.shop = None
+        self.button_positions = None
         self.default_state = dict(hunger=100, happiness=100, health=100, mental=150, phys=50, illness=0, coins=100)
         self.tamagotchi_state = self.default_state
         self.tamagotchi_worker = TamagotchiWorker(self)
@@ -192,15 +193,16 @@ class TamagotchiApp(QWidget):
         button.setStyleSheet("")
 
     def save_state(self):
-        self.save_manager.save_state(self.tamagotchi_state, self.inventory, self.buttons)
+        self.button_positions = [button.get_position() for button in self.buttons]
+        self.save_manager.save_state(self.tamagotchi_state, self.inventory, self.button_positions)
 
     def on_exit(self):
         self.save_state()
         self.close()
 
     def load_save(self):
-        self.tamagotchi_state, self.inventory, button_positions = self.save_manager.load_save(self.default_state)
-        self.save_manager.load_button_positions(button_positions)
+        self.tamagotchi_state, self.inventory, self.button_positions = self.save_manager.load_save(self.default_state)
+        self.save_manager.load_button_positions(self.button_positions, self.buttons)
 
 if __name__ == "__main__":
     tamagotchi_app = TamagotchiApp()
