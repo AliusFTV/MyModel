@@ -1,5 +1,4 @@
 import json as js
-from uuid import UUID
 class Item:
     def __init__(self, name):
         self.name = name
@@ -8,13 +7,13 @@ class Item:
         return {'name': self.name}
 
 class ButtonState:
-    def __init__(self, x, y, button_id):
+    def __init__(self, x, y, object_name):
         self.x = x
         self.y = y
-        self.id = button_id
+        self.object_name = object_name
 
     def to_dict(self):
-        return {'x': self.x, 'y': self.y, 'id': str(self.id)}
+        return {'x': self.x, 'y': self.y, 'objectName': self.object_name}
 
 class SaveManager:
     def __init__(self, tamagotchi_app):
@@ -47,13 +46,17 @@ class SaveManager:
         return tamagotchi_state, inventory, button_positions
 
     def save_button_positions(self):
-        return [ButtonState(button.x(), button.y(), button.unique_id).to_dict() for button in
+        return [{'x': button.x(), 'y': button.y(), 'objectName': button.objectName()} for button in
                 self.tamagotchi_app.buttons]
 
     def load_button_positions(self, positions, buttons):
         for position in positions:
-            button_id = UUID(position['id'])
-            for button in buttons:
-                if button.unique_id == button_id:
-                    button.move(position['x'], position['y'])
-                    break
+            if 'objectName' in position:
+                for button in buttons:
+                    if button.objectName() == position['objectName']:
+                        button.move(position['x'], position['y'])
+                        button.show()
+                        break
+
+    def printd(self, buttons):
+        print(buttons)

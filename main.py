@@ -24,7 +24,7 @@ class TamagotchiApp(QWidget):
         self.original_widgets = []
         self.shop = None
         self.button_positions = None
-        self.default_state = dict(hunger=100, happiness=100, health=100, mental=150, phys=50, illness=0, coins=100)
+        self.default_state = dict(hunger=100, happiness=100, health=100, mental=50, phys=50, illness=10, coins=1000)
         self.tamagotchi_state = self.default_state
         self.tamagotchi_worker = TamagotchiWorker(self)
         self.save_manager = SaveManager(self)
@@ -122,36 +122,45 @@ class TamagotchiApp(QWidget):
 
     def button(self):
         self.button_feed1 = DraggableButton("Бросить еду")
+        self.button_feed1.setObjectName("feed_rough")
         self.button_feed1.clicked.connect(lambda: self.feed("throw", 5, -3, -6, -5))
         self.buttons.append(self.button_feed1)
 
         self.button_feed2 = DraggableButton("Покормить с руки")
+        self.button_feed2.setObjectName("feed_hand")
         self.button_feed2.clicked.connect(lambda: self.feed("feed from hand", 5, -3, 5, 4))
         self.buttons.append(self.button_feed2)
 
         self.button_feed0 = DraggableButton("Ударить едой?")
+        self.button_feed0.setObjectName("hit")
         self.button_feed0.clicked.connect(lambda: self.feed("hit", 0, -6, -5, -10))
         self.buttons.append(self.button_feed0)
 
         self.button_feed3 = DraggableButton("Положить еду в миску")
+        self.button_feed3.setObjectName("feed_bowl")
         self.button_feed3.clicked.connect(lambda: self.feed("put in bowl", 10, -3, 0, 0))
         self.buttons.append(self.button_feed3)
 
         self.button_shop = DraggableButton("Магазин")
+        self.button_shop.setObjectName("shop")
         self.button_shop.clicked.connect(self.show_shop_widgets)
         self.buttons.append(self.button_shop)
 
         self.button_break_bowl = DraggableButton("Разбить миску")
+        self.button_break_bowl.setObjectName("break")
         self.button_break_bowl.clicked.connect(self.break_bowl)
         self.buttons.append(self.button_break_bowl)
 
         self.button_tray = DraggableButton("Свернуть в Трэй")
+        self.button_tray.setObjectName("tray")
         self.button_tray.clicked.connect(self.hide_main_window)
         self.buttons.append(self.button_tray)
 
         self.button_exit = DraggableButton("Выход")
+        self.button_exit.setObjectName("exit")
         self.button_exit.clicked.connect(self.on_exit)
         self.buttons.append(self.button_exit)
+        self.save_manager.printd(self.buttons)
 
 
     def show_shop_widgets(self):
@@ -193,7 +202,8 @@ class TamagotchiApp(QWidget):
         button.setStyleSheet("")
 
     def save_state(self):
-        self.button_positions = [button.get_position() for button in self.buttons]
+        self.button_positions = [{'x': button.x(), 'y': button.y(), 'objectName': button.objectName()} for button in
+                                self.buttons]
         self.save_manager.save_state(self.tamagotchi_state, self.inventory, self.button_positions)
 
     def on_exit(self):

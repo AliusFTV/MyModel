@@ -1,6 +1,5 @@
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu, QMenuBar, QPushButton, QLabel
-import uuid
 
 
 class DraggableButton(QPushButton):
@@ -9,7 +8,6 @@ class DraggableButton(QPushButton):
         self.setMouseTracking(True)
         self.mousePressPosition = None
         self.mouseMovePosition = None
-        self.unique_id = uuid.uuid4()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -34,8 +32,7 @@ class DraggableButton(QPushButton):
         super(DraggableButton, self).mouseReleaseEvent(event)
 
     def get_position(self):
-        return {'x': self.x(), 'y': self.y(), 'id': str(self.unique_id)}
-
+        return {'x': self.x, 'y': self.y}
 class DraggableLabel(QLabel):
     def __init__(self, text, parent=None):
         super(DraggableLabel, self).__init__(text, parent)
