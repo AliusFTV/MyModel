@@ -43,48 +43,17 @@ class EncoderLayer(nn.Module):          #СКРЫТЫЙ СЛОЙ КОДИРОВ�
         x = self.norm2(x)
 
         return x
-class DecoderLayer(nn.Module):            #СКРЫТЫЙ СЛОЙ ДЕКОДЕРА(МОЗГ ЧАСТЬ 2)
-    def __init__(self, d_model, nhead, dim_feedforward):
-        super(DecoderLayer, self).__init__()
-        self.self_attn = MultiHeadAttention(d_model, nhead)
-        self.cross_attn = MultiHeadAttention(d_model, nhead)
-        self.feedforward = FeedForwardLayer(d_model, dim_feedforward)
-        self.norm1 = nn.LayerNorm(d_model)
-        self.norm2 = nn.LayerNorm(d_model)
-        self.norm3 = nn.LayerNorm(d_model)
-
-    def forward(self, x, memory):
-        # САМО-ВНИМАНИЕ
-        attn_output = self.self_attn(x)
-        x = x + attn_output
-        x = self.norm1(x)
-
-        # ПЕРЕКРЁСТНОЕ ВНИМАНИЕ
-        cross_attn_output = self.cross_attn(x, memory, memory)
-        x = x + cross_attn_output
-        x = self.norm2(x)
-
-        # ПРЯМОЙ ПРОХОД
-        ff_output = self.feedforward(x)
-        x = x + ff_output
-        x = self.norm3(x)
-
-        return x
 class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
-    def __init__(self, d_model, nhead, num_layers, dim_feedforward):
+    def __init__(self, d_model, nhead, num_layers, dim_feedforward, num_classes):
         super(Transformer, self).__init__()
         self.encoder_layers = nn.ModuleList([EncoderLayer(d_model, nhead, dim_feedforward) for _ in range(num_layers)])
-        self.decoder_layers = nn.ModuleList([DecoderLayer(d_model, nhead, dim_feedforward) for _ in range(num_layers)])
+        self.classifier = nn.Linear(d_model, num_classes)
 
-    def forward(self, src, tgt):
+    def forward(self, src):
         memory = src
         for encoder_layer in self.encoder_layers:
             memory = encoder_layer(memory)
-
-        output = tgt
-        for decoder_layer in self.decoder_layers:
-            output = decoder_layer(output, memory)
-
+        output = self.classifier(memory[:, 0, :])
         return output
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
@@ -96,6 +65,8 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
         # ПРОГРЕСС БАР
         for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
             optimizer.zero_grad()
+            assert input_batch.size(
+                -1) == d_model, f"Размерность встроенных представлений не совпадает с d_model. Ожидалось {d_model}, получено {input_batch.size(-1)}"
             output_batch = model(input_batch)
             loss = criterion(output_batch, target_batch)
             loss.backward()
@@ -104,39 +75,54 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
             total_loss += loss.item()
 
         avg_loss = total_loss / len(train_dataloader)
-        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}')
+        model.eval()
+        total_correct = 0
+        total_samples = 0
+
+        with torch.no_grad():
+            for input_batch, target_batch in tqdm(test_dataloader, desc='Testing', unit='batch', leave=False):
+                output_batch = model(input_batch)
+                _, predicted = torch.max(output_batch, 1)
+                total_correct += (predicted == target_batch).sum().item()
+                total_samples += target_batch.size(0)
+
+        accuracy = total_correct / total_samples
+        print(f'Эпохи {epoch + 1}/{num_epochs}, Потери: {avg_loss:.4f}, Точность: {accuracy:.4f}')
 
 # ГИПЕРПАРАМЕТРЫ
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
 d_model = 512
 nhead = 8
 num_layers = 6
 dim_feedforward = 2048
-num_epochs = 10
-learning_rate = 1e-4
+num_classes = 3
+num_epochs = 3
+learning_rate = 2e-5
 batch_size = 8
 
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
-model = Transformer(d_model, nhead, num_layers, dim_feedforward)
+model = Transformer(d_model, nhead, num_layers, dim_feedforward, num_classes)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 criterion = nn.CrossEntropyLoss()
 
 # ДАННЫЕ
-dataset = load_dataset("glue", "mrpc")
+dataset = load_dataset("glue", "mnli")
 train_data = dataset["train"]
-test_data = dataset["test"]
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+test_data = dataset["validation_matched"]
+
 
 # ПРЕОБРАЗОВАНИЕ В DATALOADER
 def collate_fn(batch):
-    input_texts = [example["sentence1"] for example in batch]
-    target_texts = [example["sentence2"] for example in batch]
+    input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
+    target_texts = [example["label"] for example in batch]
 
-    input_data = torch.tensor(tokenizer(input_texts, return_tensors="pt", padding=True)["input_ids"])
-    target_data = torch.tensor(tokenizer(target_texts, return_tensors="pt", padding=True)["input_ids"])
-
+    input_data = tokenizer(input_texts, return_tensors="pt", padding=True)["input_ids"].clone().detach()
+    target_data = torch.tensor(target_texts)
     return input_data, target_data
+
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
 # ОБУЧЕНИЕ
 train_model(model, train_dataloader, criterion, optimizer, num_epochs)
+torch.save(model.state_dict(), 'model.pth')
