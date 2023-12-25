@@ -5,6 +5,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import BertTokenizer
 
+
 class MultiHeadAttention(nn.Module):          #ВНИМАНИЕ НЕЙРОНОВ
     def __init__(self, d_model, nhead):
         super(MultiHeadAttention, self).__init__()
@@ -58,6 +59,7 @@ class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
+    global d_model
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
@@ -65,6 +67,7 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
         # ПРОГРЕСС БАР
         for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
             optimizer.zero_grad()
+            d_model = input_batch.size(-1)
             assert input_batch.size(
                 -1) == d_model, f"Размерность встроенных представлений не совпадает с d_model. Ожидалось {d_model}, получено {input_batch.size(-1)}"
             output_batch = model(input_batch)
@@ -88,11 +91,12 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
 
         accuracy = total_correct / total_samples
         print(f'Эпохи {epoch + 1}/{num_epochs}, Потери: {avg_loss:.4f}, Точность: {accuracy:.4f}')
+        yield d_model
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-d_model = 512
 nhead = 8
+d_model = 512
 num_layers = 6
 dim_feedforward = 2048
 num_classes = 3
