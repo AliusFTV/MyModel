@@ -67,9 +67,6 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
         # ПРОГРЕСС БАР
         for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
             optimizer.zero_grad()
-            d_model = input_batch.size(-1)
-            assert input_batch.size(
-                -1) == d_model, f"Размерность встроенных представлений не совпадает с d_model. Ожидалось {d_model}, получено {input_batch.size(-1)}"
             output_batch = model(input_batch)
             loss = criterion(output_batch, target_batch)
             loss.backward()
@@ -91,7 +88,6 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
 
         accuracy = total_correct / total_samples
         print(f'Эпохи {epoch + 1}/{num_epochs}, Потери: {avg_loss:.4f}, Точность: {accuracy:.4f}')
-        yield d_model
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
@@ -121,6 +117,7 @@ def collate_fn(batch):
     target_texts = [example["label"] for example in batch]
 
     input_data = tokenizer(input_texts, return_tensors="pt", padding=True)["input_ids"].clone().detach()
+    print(f"Expected d_model: {d_model}, Actual d_model: {input_data.size(-1)}")
     target_data = torch.tensor(target_texts)
     return input_data, target_data
 
