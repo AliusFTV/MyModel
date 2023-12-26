@@ -59,7 +59,6 @@ class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
-    global d_model
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
@@ -90,7 +89,7 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
         print(f'Эпохи {epoch + 1}/{num_epochs}, Потери: {avg_loss:.4f}, Точность: {accuracy:.4f}')
 
 # ГИПЕРПАРАМЕТРЫ
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
+tokenizer = custom_tokenizer
 nhead = 8
 d_model = 512
 num_layers = 6
