@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from datasets import load_dataset
-from transformers import BertTokenizer
+from tokenizer import custom_tokenizer
 
 
 class MultiHeadAttention(nn.Module):          #ВНИМАНИЕ НЕЙРОНОВ
@@ -59,6 +59,7 @@ class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
+    global d_model
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
@@ -115,7 +116,7 @@ def collate_fn(batch):
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
 
-    input_data = tokenizer(input_texts, return_tensors="pt", padding=True)["input_ids"].clone().detach()
+    input_data = tokenizer(input_texts)["input_ids"].clone().detach()
     print(f"Expected d_model: {d_model}, Actual d_model: {input_data.size(-1)}")
     target_data = torch.tensor(target_texts)
     return input_data, target_data
