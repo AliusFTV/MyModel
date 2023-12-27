@@ -1,6 +1,7 @@
 import re
 import torch
 import nltk
+from collections import Counter
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
@@ -10,24 +11,15 @@ nltk.download('stopwords')
 nltk.download('wordnet')
 
 def custom_tokenizer(text, max_length=512):
-    # Удаляем лишние символы и цифры
     text = re.sub(r"[^a-zA-Z]", " ", text)
-
-    # Токенизация
     tokens = word_tokenize(text)
-
-    # Приводим к нижнему регистру
-    tokens = [token.lower() for token in tokens]
-
-    # Удаление стоп-слов
+    lemmatizer = WordNetLemmatizer()
+    tokens = [lemmatizer.lemmatize(token.lower()) for token in tokens]
     stop_words = set(stopwords.words('english'))
     tokens = [token for token in tokens if token not in stop_words]
-
-    # Лемматизация
-    lemmatizer = WordNetLemmatizer()
-    tokens = [lemmatizer.lemmatize(token) for token in tokens]
+    word_counter = Counter(tokens)
+    tokens = [word for word, count in word_counter.items() if word.isalpha() and count > 1]
     tokens = tokens[:max_length] + ['[PAD]'] * (max_length - len(tokens))
-    vocab = {token: i + 1 for i, token in enumerate(set(tokens))}
+    vocab = {token: i + 1 for i, token in enumerate(tokens)}
     numerical_tokens = [vocab[token] for token in tokens]
-    numerical_tokens = numerical_tokens[:max_length] + [0] * (max_length - len(numerical_tokens))
     return numerical_tokens
