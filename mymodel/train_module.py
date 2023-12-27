@@ -179,7 +179,7 @@ def collate_fn(batch):
         return_tensors="pt",
         padding=True,
         truncation=True,
-        max_length=512  # Укажите максимальную длину ваших предложений
+        max_length=512
     )
     input_data = input_data["input_ids"]
     mask = (input_data != tokenizer.pad_token_id).unsqueeze(1).unsqueeze(2)

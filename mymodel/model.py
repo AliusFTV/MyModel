@@ -12,7 +12,8 @@ class MultiHeadAttention(nn.Module):          #ВНИМАНИЕ НЕЙРОНОВ
         self.attention = nn.MultiheadAttention(d_model, nhead)
 
     def forward(self, x):
-        return self.attention(x, x, x)[0]
+        x_combined = torch.stack(x, dim=0).float() if isinstance(x, list) else x.float()
+        return self.attention(x_combined, x_combined, x_combined)[0]
 
 class FeedForwardLayer(nn.Module):      #СЛОЙ ПРЯМОГО ПРОХОДА(FORWARD PASS)
     def __init__(self, d_model, dim_feedforward):
@@ -35,7 +36,7 @@ class EncoderLayer(nn.Module):          #СКРЫТЫЙ СЛОЙ КОДИРОВ�
         self.norm2 = nn.LayerNorm(d_model)
 
     def forward(self, x):
-        attn_output = self.self_attn(x)
+        attn_output, _ = self.self_attn(x, x, x)
         x = x + attn_output
         x = self.norm1(x)
 
@@ -54,7 +55,7 @@ class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
         memory = src
         for encoder_layer in self.encoder_layers:
             memory = encoder_layer(memory)
-        output = self.classifier(memory[:, 0, :])
+        output = self.classifier(memory[0][:, 0, :])
         return output
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
@@ -113,13 +114,14 @@ test_data = dataset["validation_matched"]
 
 # ПРЕОБРАЗОВАНИЕ В DATALOADER
 def collate_fn(batch):
-    input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
+    input_texts = [tokenizer(" [SEP] ".join(example["premise"]) + " [SEP] " + " [SEP] ".join(example["hypothesis"])) if isinstance(example["premise"], list) and isinstance(example["hypothesis"], list) else tokenizer(example["premise"] + " [SEP] " + example["hypothesis"]) for example in batch]
     target_texts = [example["label"] for example in batch]
 
-    input_data = tokenizer(input_texts)["input_ids"].clone().detach()
-    print(f"Expected d_model: {d_model}, Actual d_model: {input_data.size(-1)}")
+    input_data = [torch.tensor(text).clone().detach() for text in input_texts]
+    print(f"Expected d_model: {d_model}, Actual d_model: {input_data[0].size(-1)}")  # Проверка размерности первого тензора
     target_data = torch.tensor(target_texts)
     return input_data, target_data
+
 
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
