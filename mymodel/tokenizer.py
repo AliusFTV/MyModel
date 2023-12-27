@@ -1,4 +1,5 @@
 import re
+import torch
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
@@ -9,7 +10,7 @@ nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
 
-def custom_tokenizer(text):
+def custom_tokenizer(text, max_length=512):
     # Удаляем лишние символы и цифры
     text = re.sub(r"[^a-zA-Z]", " ", text)
 
@@ -26,8 +27,11 @@ def custom_tokenizer(text):
     # Лемматизация
     lemmatizer = WordNetLemmatizer()
     tokens = [lemmatizer.lemmatize(token) for token in tokens]
-
-    return tokens
+    tokens = tokens[:max_length] + ['[PAD]'] * (max_length - len(tokens))
+    vocab = {token: i + 1 for i, token in enumerate(set(tokens))}
+    numerical_tokens = [vocab[token] for token in tokens]
+    numerical_tokens = numerical_tokens[:max_length] + [0] * (max_length - len(numerical_tokens))
+    return numerical_tokens
 dataset = load_dataset("glue", "mnli")
 train_data = dataset["train"]
 # Пример использования
