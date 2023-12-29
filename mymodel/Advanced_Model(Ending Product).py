@@ -8,14 +8,14 @@ import math
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-nhead = 8
+nhead = 16
 d_model = 1600
-num_layers = 6
-dim_feedforward = 2048
+num_layers = 12
+dim_feedforward = 3096
 num_classes = 3
 num_epochs = 3
 learning_rate = 2e-5
-batch_size = 32
+batch_size = 64
 dropout = 0.1
 
 
@@ -70,6 +70,22 @@ class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FOR
     def forward(self, x):
         return self.feedforward(x)
 
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_seq_length):
+        super(PositionalEncoding, self).__init__()
+
+        pe = torch.zeros(max_seq_length, d_model)
+        position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+
+        self.register_buffer('pe', pe.unsqueeze(0))
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1)]
 class EncoderLayer(nn.Module):  # СКРЫТЫЙ СЛОЙ КОДИРОВКИ(МОЗГ ЧАСТЬ 1)
     def __init__(self, d_model, nhead, dim_feedforward, dropout):
         super(EncoderLayer, self).__init__()
@@ -117,7 +133,6 @@ class Transformer(nn.Module):  # АРХИТЕКТУРА И ЗАПУСК
         self.encoder_layers = nn.ModuleList([EncoderLayer(d_model, nhead, dim_feedforward, dropout) for _ in range(num_layers)])
         self.classifier = nn.Linear(d_model, num_classes)
         self.dropout = nn.Dropout(dropout)
-        self.mask = None
 
 
     def forward(self, src, mask):
@@ -134,9 +149,9 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
         total_loss = 0.0
 
         # ПРОГРЕСС БАР
-        for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
+        for input_batch, target_batch, mask in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
             optimizer.zero_grad()
-            output_batch = model(input_batch, model.mask)
+            output_batch = model(input_batch, mask)
             loss = criterion(output_batch, target_batch)
             loss.backward()
             optimizer.step()
@@ -172,11 +187,11 @@ test_data = dataset["validation_matched"]
 def collate_fn(batch):
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
-    input_data = tokenizer(input_texts, return_tensors="pt", padding=True)["input_ids"].clone().detach()
+    input_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=1600)["input_ids"].clone().detach()
     mask = (input_data != tokenizer.pad_token_id).unsqueeze(1).unsqueeze(2)
     input_data = input_data.float()
     target_data = torch.tensor(target_texts)
-    return input_data, target_data
+    return input_data, target_data, mask
 
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)

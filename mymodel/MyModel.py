@@ -91,14 +91,14 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-nhead = 8
-d_model = 512
-num_layers = 6
-dim_feedforward = 2048
+nhead = 16
+d_model = 1600
+num_layers = 12
+dim_feedforward = 3096
 num_classes = 3
 num_epochs = 3
 learning_rate = 2e-5
-batch_size = 32
+batch_size = 64
 
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
 model = Transformer(d_model, nhead, num_layers, dim_feedforward, num_classes)
@@ -115,7 +115,7 @@ test_data = dataset["validation_matched"]
 def collate_fn(batch):
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
-    input_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=512)["input_ids"].clone().detach()
+    input_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=1600)["input_ids"].clone().detach()
     input_data = input_data.float()
     print(f"Expected d_model: {d_model}, Actual d_model: {input_data.size(-1)}")
     target_data = torch.tensor(target_texts)
