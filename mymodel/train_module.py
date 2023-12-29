@@ -9,13 +9,13 @@ import math
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
 nhead = 8
-d_model = 768
+d_model = 1600
 num_layers = 6
 dim_feedforward = 2048
 num_classes = 3
 num_epochs = 3
 learning_rate = 2e-5
-batch_size = 8
+batch_size = 32
 dropout = 0.1
 
 
@@ -33,7 +33,7 @@ class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
         self.W_v = nn.Linear(d_model, d_model)
         self.W_o = nn.Linear(d_model, d_model)
 
-    def scaled_dot_product_attention(self, Q, K, V, mask=None):
+    def scaled_dot_product_attention(self, Q, K, V, mask):
         attn_scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
         if mask is not None:
             attn_scores = attn_scores.masked_fill(mask == 0, -1e9)
@@ -49,7 +49,7 @@ class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
         batch_size, _, seq_length, d_k = x.size()
         return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.d_model)
 
-    def forward(self, Q, K, V, mask=None):
+    def forward(self, Q, K, V, mask):
         Q = self.split_heads(self.W_q(Q))
         K = self.split_heads(self.W_k(K))
         V = self.split_heads(self.W_v(V))
@@ -172,18 +172,9 @@ test_data = dataset["validation_matched"]
 def collate_fn(batch):
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
-
-    # Используйте tokenizer.batch_encode_plus для корректной обработки пакетов
-    input_data = tokenizer.batch_encode_plus(
-        input_texts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=512
-    )
-    input_data = input_data["input_ids"]
+    input_data = tokenizer(input_texts, return_tensors="pt", padding=True)["input_ids"].clone().detach()
     mask = (input_data != tokenizer.pad_token_id).unsqueeze(1).unsqueeze(2)
-
+    input_data = input_data.float()
     target_data = torch.tensor(target_texts)
     return input_data, target_data
 
@@ -192,4 +183,4 @@ test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, co
 
 # ОБУЧЕНИЕ
 train_model(model, train_dataloader, criterion, optimizer, num_epochs)
-torch.save(model.state_dict(), 'model.pth')
+torch.save(model.state_dict(), 'adv_model.pth')
