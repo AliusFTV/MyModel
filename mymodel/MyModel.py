@@ -58,7 +58,8 @@ class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
-    global d_model
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
