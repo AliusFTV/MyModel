@@ -63,7 +63,7 @@ class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FOR
         super(FeedForwardLayer, self).__init__()
         self.feedforward = nn.Sequential(
             nn.Linear(d_model, dim_feedforward),
-            nn.ReLU(),
+            nn.PReLU(),
             nn.Linear(dim_feedforward, d_model)
         )
 
@@ -187,8 +187,9 @@ test_data = dataset["validation_matched"]
 def collate_fn(batch):
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
-    input_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=1600)["input_ids"].clone().detach()
-    mask = (input_data != tokenizer.pad_token_id).unsqueeze(1).unsqueeze(2)
+    tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=1600)
+    input_data = tokenized_data["input_ids"].clone().detach()
+    mask = tokenized_data["attention_mask"].unsqueeze(1).unsqueeze(2).float()
     input_data = input_data.float()
     target_data = torch.tensor(target_texts)
     return input_data, target_data, mask
