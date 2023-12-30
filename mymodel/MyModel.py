@@ -49,6 +49,7 @@ class Transformer(nn.Module):         #АРХИТЕКТУРА И ЗАПУСК
         self.encoder_layers = nn.ModuleList([EncoderLayer(d_model, nhead, dim_feedforward) for _ in range(num_layers)])
         self.classifier = nn.Linear(d_model, num_classes)
 
+
     def forward(self, src):
         memory = src
         for encoder_layer in self.encoder_layers:
@@ -103,6 +104,11 @@ batch_size = 64
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
 model = Transformer(d_model, nhead, num_layers, dim_feedforward, num_classes)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+for state in optimizer.state.values():
+    for k, v in state.items():
+        if torch.is_tensor(v):
+            state[k] = v.to(device)
 criterion = nn.CrossEntropyLoss()
 
 # ДАННЫЕ
@@ -113,12 +119,12 @@ test_data = dataset["validation_matched"]
 
 # ПРЕОБРАЗОВАНИЕ В DATALOADER
 def collate_fn(batch):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
     input_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=1600)["input_ids"].clone().detach()
-    input_data = input_data.float()
-    print(f"Expected d_model: {d_model}, Actual d_model: {input_data.size(-1)}")
-    target_data = torch.tensor(target_texts)
+    input_data = input_data.float().to(device)
+    target_data = torch.tensor(target_texts).to(device)
     return input_data, target_data
 
 
