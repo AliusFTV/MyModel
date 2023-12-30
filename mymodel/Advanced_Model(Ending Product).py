@@ -185,12 +185,16 @@ test_data = dataset["validation_matched"]
 
 # ПРЕОБРАЗОВАНИЕ В DATALOADER
 def collate_fn(batch):
+    vocab_size = tokenizer.vocab_size
+    embedding_dim = d_model
+    embedding_layer = nn.Embedding(vocab_size, embedding_dim)
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
-    tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='max_length', max_length=1600)
+    tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
     input_data = tokenized_data["input_ids"].clone().detach()
-    mask = tokenized_data["attention_mask"].unsqueeze(1).unsqueeze(2).float()
-    input_data = input_data.float()
+    input_data = embedding_layer(input_data).float()
+    mask = tokenized_data["attention_mask"]
+    mask = embedding_layer(mask).float()
     target_data = torch.tensor(target_texts)
     return input_data, target_data, mask
 
