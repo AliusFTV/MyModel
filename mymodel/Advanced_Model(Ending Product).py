@@ -59,6 +59,7 @@ class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
         output = self.W_o(self.combine_heads(attn_output))
         return output
 
+
 class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FORWARD PASS)
     def __init__(self, d_model, dim_feedforward):
         super(FeedForwardLayer, self).__init__()
@@ -75,18 +76,17 @@ class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FOR
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_seq_length):
         super(PositionalEncoding, self).__init__()
-
         pe = torch.zeros(max_seq_length, d_model)
         position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
-
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-
         self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
         return x + self.pe[:, :x.size(1)]
+
+
 class EncoderLayer(nn.Module):  # СКРЫТЫЙ СЛОЙ КОДИРОВКИ(МОЗГ ЧАСТЬ 1)
     def __init__(self, d_model, nhead, dim_feedforward, dropout):
         super(EncoderLayer, self).__init__()
@@ -125,7 +125,6 @@ class DecoderLayer(nn.Module):
         return x
 
 
-
 class Transformer(nn.Module):  # АРХИТЕКТУРА И ЗАПУСК
     def __init__(self, d_model, nhead, num_layers, dim_feedforward, num_classes, dropout):
         super(Transformer, self).__init__()
@@ -135,7 +134,6 @@ class Transformer(nn.Module):  # АРХИТЕКТУРА И ЗАПУСК
         self.classifier = nn.Linear(d_model, num_classes)
         self.dropout = nn.Dropout(dropout)
 
-
     def forward(self, src, mask):
         memory = src
         for encoder_layer in self.encoder_layers:
@@ -143,13 +141,13 @@ class Transformer(nn.Module):  # АРХИТЕКТУРА И ЗАПУСК
         output = self.classifier(memory[:, 0, :])
         return output
 
+
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
     model.to(device)
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
-
         # ПРОГРЕСС БАР
         for input_batch, target_batch, mask in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
             optimizer.zero_grad()
@@ -157,10 +155,9 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
             loss = criterion(output_batch, target_batch)
             loss.backward()
             optimizer.step()
-
             total_loss += loss.item()
-
         avg_loss = total_loss / len(train_dataloader)
+
         model.eval()
         total_correct = 0
         total_samples = 0
@@ -174,6 +171,7 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
 
         accuracy = total_correct / total_samples
         print(f'Эпохи {epoch + 1}/{num_epochs}, Потери: {avg_loss:.4f}, Точность: {accuracy:.4f}')
+
 
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
 model = Transformer(d_model, nhead, num_layers, dim_feedforward, num_classes, dropout)
@@ -189,6 +187,7 @@ dataset = load_dataset("glue", "mnli")
 train_data = dataset["train"]
 test_data = dataset["validation_matched"]
 
+
 # ПРЕОБРАЗОВАНИЕ В DATALOADER
 def collate_fn(batch):
     vocab_size = tokenizer.vocab_size
@@ -202,6 +201,7 @@ def collate_fn(batch):
     mask = tokenized_data["attention_mask"].unsqueeze(1).unsqueeze(2).float().to(device)
     target_data = torch.tensor(target_texts).to(device)
     return input_data, target_data, mask
+
 
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
