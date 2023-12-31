@@ -17,6 +17,7 @@ num_epochs = 3
 learning_rate = 2e-5
 batch_size = 64
 dropout = 0.1
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
@@ -144,6 +145,7 @@ class Transformer(nn.Module):  # АРХИТЕКТУРА И ЗАПУСК
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
+    model.to(device)
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
@@ -176,6 +178,10 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
 model = Transformer(d_model, nhead, num_layers, dim_feedforward, num_classes, dropout)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+for state in optimizer.state.values():
+    for k, v in state.items():
+        if torch.is_tensor(v):
+            state[k] = v.to(device)
 criterion = nn.CrossEntropyLoss()
 
 # ДАННЫЕ
@@ -192,10 +198,9 @@ def collate_fn(batch):
     target_texts = [example["label"] for example in batch]
     tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
     input_data = tokenized_data["input_ids"].clone().detach()
-    input_data = embedding_layer(input_data).float()
-    mask = tokenized_data["attention_mask"]
-    mask = embedding_layer(mask).float()
-    target_data = torch.tensor(target_texts)
+    input_data = embedding_layer(input_data).float().to(device)
+    mask = tokenized_data["attention_mask"].unsqueeze(1).unsqueeze(2).float().to(device)
+    target_data = torch.tensor(target_texts).to(device)
     return input_data, target_data, mask
 
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
