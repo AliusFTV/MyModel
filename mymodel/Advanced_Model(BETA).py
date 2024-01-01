@@ -19,12 +19,8 @@ batch_size = 64
 dropout = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
-vocab_size = tokenizer.vocab_size
-src_vocab_size = vocab_size
-tgt_vocab_size = vocab_size
-embedding_dim = d_model
-embedding_layer = nn.Embedding(vocab_size, embedding_dim).to(device)
-
+src_vocab_size = tokenizer.vocab_size
+tgt_vocab_size = src_vocab_size
 
 class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
     def __init__(self, d_model, num_heads):
@@ -90,9 +86,12 @@ class PositionalEncoding(nn.Module):         #ПОЗИЦИИ СЛОВ
         self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
-        return x + self.pe[:, :x.size(1)]
-
-
+        if x.dim() == 3:
+            return x + self.pe[:, :x.size(1)]
+        elif x.dim() == 2:
+            return x.unsqueeze(1) + self.pe[:, :x.size(1)]
+        else:
+            raise ValueError("Input tensor must be 2D or 3D")
 class EncoderLayer(nn.Module):  # СКРЫТЫЙ СЛОЙ КОДИРОВКИ(МОЗГ ЧАСТЬ 1)
     def __init__(self, d_model, nhead, dim_feedforward, dropout):
         super(EncoderLayer, self).__init__()
@@ -147,15 +146,15 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
     def generate_mask(self, src, tgt):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
         tgt_mask = (tgt != 0).unsqueeze(1).unsqueeze(2)
-        seq_length = tgt.size(-1)
+        seq_length = max_seq_length
         nopeak_mask = (1 - torch.triu(torch.ones(1, seq_length, seq_length), diagonal=1)).bool()
         tgt_mask = tgt_mask & nopeak_mask.to(device)
         return src_mask, tgt_mask
 
     def forward(self, src, tgt):
         src_mask, tgt_mask = self.generate_mask(src, tgt)
-        src_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src)))
-        tgt_embedded = self.dropout(self.positional_encoding(self.decoder_embedding(tgt)))
+        src_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src))).to(device)
+        tgt_embedded = self.dropout(self.positional_encoding(self.decoder_embedding(tgt))).to(device)
 
         enc_output = src_embedded
         for enc_layer in self.encoder_layers:
@@ -163,6 +162,7 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
 
         dec_output = tgt_embedded
         for dec_layer in self.decoder_layers:
+            tgt_mask = tgt_mask.unsqueeze(1)
             dec_output = dec_layer(dec_output, enc_output, src_mask, tgt_mask)
 
         output = self.classifier(dec_output[:, 0, :])
@@ -170,7 +170,7 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
 
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
-def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
+def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs):
     model.to(device)
     model.train()
     for epoch in range(num_epochs):
@@ -221,7 +221,6 @@ def collate_fn(batch):
     target_texts = [example["label"] for example in batch]
     tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
     input_data = tokenized_data["input_ids"].clone().detach()
-    input_data = embedding_layer(input_data).to(torch.long).to(device)
     target_data = torch.tensor(target_texts, dtype=torch.long).to(device)
     return input_data, target_data
 
@@ -230,5 +229,5 @@ train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, c
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
 # ОБУЧЕНИЕ
-train_model(model, train_dataloader, criterion, optimizer, num_epochs)
+train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs)
 torch.save(model.state_dict(), 'adv_model.pth')
