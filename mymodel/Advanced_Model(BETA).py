@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.init as init
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from datasets import load_dataset
@@ -21,6 +22,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
 src_vocab_size = tokenizer.vocab_size
 tgt_vocab_size = src_vocab_size
+
+
+def weights_init(m):
+    if isinstance(m, nn.Linear):
+        nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
 
 class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
     def __init__(self, d_model, num_heads):
@@ -67,7 +75,7 @@ class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FOR
         super(FeedForwardLayer, self).__init__()
         self.feedforward = nn.Sequential(
             nn.Linear(d_model, dim_feedforward),
-            nn.PReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(dim_feedforward, d_model)
         )
 
@@ -202,6 +210,7 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
 
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
 model = Transformer(src_vocab_size, tgt_vocab_size, d_model, nhead, num_layers, dim_feedforward, max_seq_length, dropout)
+model.apply(weights_init)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 for state in optimizer.state.values():
     for k, v in state.items():
