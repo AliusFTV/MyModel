@@ -8,17 +8,26 @@ import math
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-nhead = 16
-d_model = 1600
-num_layers = 12
-dim_feedforward = 3096
+nhead = 2
+d_model = 512
+num_layers = 2
+dim_feedforward = 512
 num_classes = 3
-num_epochs = 3
-learning_rate = 2e-5
-batch_size = 64
+num_epochs = 2
+learning_rate = 1e-4
+batch_size = 8
 dropout = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+max_seq_length = 512
+src_vocab_size = tokenizer.vocab_size
+tgt_vocab_size = src_vocab_size
 
+
+def weights_init(m):
+    if isinstance(m, nn.Linear):
+        nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
 
 class MultiHeadAttention(nn.Module):  # ВНИМАНИЕ НЕЙРОНОВ
     def __init__(self, d_model, num_heads):
@@ -65,7 +74,7 @@ class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FOR
         super(FeedForwardLayer, self).__init__()
         self.feedforward = nn.Sequential(
             nn.Linear(d_model, dim_feedforward),
-            nn.PReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(dim_feedforward, d_model)
         )
 
@@ -73,7 +82,7 @@ class FeedForwardLayer(nn.Module):  # СЛОЙ ПРЯМОГО ПРОХОДА(FOR
         return self.feedforward(x)
 
 
-class PositionalEncoding(nn.Module):
+class PositionalEncoding(nn.Module):         #ПОЗИЦИИ СЛОВ
     def __init__(self, d_model, max_seq_length):
         super(PositionalEncoding, self).__init__()
         pe = torch.zeros(max_seq_length, d_model)
@@ -84,9 +93,12 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe.unsqueeze(0))
 
     def forward(self, x):
-        return x + self.pe[:, :x.size(1)]
-
-
+        if x.dim() == 3:
+            return x + self.pe[:, :x.size(1)]
+        elif x.dim() == 2:
+            return x.unsqueeze(1) + self.pe[:, :x.size(1)]
+        else:
+            raise ValueError("Input tensor must be 2D or 3D")
 class EncoderLayer(nn.Module):  # СКРЫТЫЙ СЛОЙ КОДИРОВКИ(МОЗГ ЧАСТЬ 1)
     def __init__(self, d_model, nhead, dim_feedforward, dropout):
         super(EncoderLayer, self).__init__()
@@ -104,7 +116,7 @@ class EncoderLayer(nn.Module):  # СКРЫТЫЙ СЛОЙ КОДИРОВКИ(М�
         return x
 
 
-class DecoderLayer(nn.Module):
+class DecoderLayer(nn.Module):    # СКРЫТЫЙ СЛОЙ ДЕКОДИРОВКИ(МОЗГ ЧАСТЬ 2)
     def __init__(self, d_model, num_heads, dim_feedforward, dropout):
         super(DecoderLayer, self).__init__()
         self.self_attn = MultiHeadAttention(d_model, num_heads)
@@ -125,33 +137,55 @@ class DecoderLayer(nn.Module):
         return x
 
 
-class Transformer(nn.Module):  # АРХИТЕКТУРА И ЗАПУСК
-    def __init__(self, d_model, nhead, num_layers, dim_feedforward, num_classes, dropout):
+class Transformer(nn.Module):           #АРХИТЕКТУРА
+    def __init__(self, src_vocab_size, tgt_vocab_size, d_model, nhead, num_layers, dim_feedforward, max_seq_length, dropout):
         super(Transformer, self).__init__()
-        self.d_model = d_model
-        self.decoder_layers = nn.ModuleList([DecoderLayer(d_model, nhead, dim_feedforward, dropout) for _ in range(num_layers)])
+        self.encoder_embedding = nn.Embedding(src_vocab_size, d_model)
+        self.decoder_embedding = nn.Embedding(tgt_vocab_size, d_model)
+        self.positional_encoding = PositionalEncoding(d_model, max_seq_length)
+
         self.encoder_layers = nn.ModuleList([EncoderLayer(d_model, nhead, dim_feedforward, dropout) for _ in range(num_layers)])
-        self.classifier = nn.Linear(d_model, num_classes)
+        self.decoder_layers = nn.ModuleList([DecoderLayer(d_model, nhead, dim_feedforward, dropout) for _ in range(num_layers)])
+
+        self.classifier = nn.Linear(d_model, tgt_vocab_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, src, mask):
-        memory = src
-        for encoder_layer in self.encoder_layers:
-            memory = encoder_layer(memory, mask)
-        output = self.classifier(memory[:, 0, :])
+    def generate_mask(self, src, tgt):
+        src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
+        tgt_mask = (tgt != 0).unsqueeze(1).unsqueeze(2)
+        seq_length = max_seq_length
+        nopeak_mask = (1 - torch.triu(torch.ones(1, seq_length, seq_length), diagonal=1)).bool()
+        tgt_mask = tgt_mask & nopeak_mask.to(device)
+        return src_mask, tgt_mask
+
+    def forward(self, src, tgt):
+        src_mask, tgt_mask = self.generate_mask(src, tgt)
+        src_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src))).to(device)
+        tgt_embedded = self.dropout(self.positional_encoding(self.decoder_embedding(tgt))).to(device)
+
+        enc_output = src_embedded
+        for enc_layer in self.encoder_layers:
+            enc_output = enc_layer(enc_output, src_mask)
+
+        dec_output = tgt_embedded
+        tgt_mask = tgt_mask.unsqueeze(1)
+        for dec_layer in self.decoder_layers:
+            dec_output = dec_layer(dec_output, enc_output, src_mask, tgt_mask)
+
+        output = self.classifier(dec_output[:, 0, :])
         return output
 
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
-def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
+def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs):
     model.to(device)
     model.train()
     for epoch in range(num_epochs):
         total_loss = 0.0
         # ПРОГРЕСС БАР
-        for input_batch, target_batch, mask in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
+        for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
             optimizer.zero_grad()
-            output_batch = model(input_batch, mask)
+            output_batch = model(input_batch, target_batch)
             loss = criterion(output_batch, target_batch)
             loss.backward()
             optimizer.step()
@@ -174,7 +208,8 @@ def train_model(model, train_dataloader, criterion, optimizer, num_epochs):
 
 
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
-model = Transformer(d_model, nhead, num_layers, dim_feedforward, num_classes, dropout)
+model = Transformer(src_vocab_size, tgt_vocab_size, d_model, nhead, num_layers, dim_feedforward, max_seq_length, dropout)
+model.apply(weights_init)
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 for state in optimizer.state.values():
     for k, v in state.items():
@@ -190,22 +225,17 @@ test_data = dataset["validation_matched"]
 
 # ПРЕОБРАЗОВАНИЕ В DATALOADER
 def collate_fn(batch):
-    vocab_size = tokenizer.vocab_size
-    embedding_dim = d_model
-    embedding_layer = nn.Embedding(vocab_size, embedding_dim)
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
     tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
     input_data = tokenized_data["input_ids"].clone().detach()
-    input_data = embedding_layer(input_data).float().to(device)
-    mask = tokenized_data["attention_mask"].unsqueeze(1).unsqueeze(2).float().to(device)
-    target_data = torch.tensor(target_texts).to(device)
-    return input_data, target_data, mask
+    target_data = torch.tensor(target_texts, dtype=torch.long).to(device)
+    return input_data, target_data
 
 
 train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
 # ОБУЧЕНИЕ
-train_model(model, train_dataloader, criterion, optimizer, num_epochs)
+train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs)
 torch.save(model.state_dict(), 'adv_model.pth')
