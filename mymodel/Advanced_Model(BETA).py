@@ -9,14 +9,14 @@ import math
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-nhead = 4
+nhead = 2
 d_model = 512
-num_layers = 3
-dim_feedforward = 1024
+num_layers = 2
+dim_feedforward = 512
 num_classes = 3
-num_epochs = 3
-learning_rate = 2e-5
-batch_size = 16
+num_epochs = 2
+learning_rate = 1e-4
+batch_size = 8
 dropout = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
