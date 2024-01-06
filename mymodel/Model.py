@@ -8,14 +8,14 @@ import math
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-nhead = 8
-d_model = 1024
-num_layers = 6
-dim_feedforward = 2048
+nhead = 4
+d_model = 512
+num_layers = 3
+dim_feedforward = 1024
 num_classes = 3
 num_epochs = 3
 learning_rate = 2e-5
-batch_size = 32
+batch_size = 8
 dropout = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
@@ -160,8 +160,10 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
 
     def forward(self, src, tgt):
         src_mask, tgt_mask = self.generate_mask(src, tgt)
-        src_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src))).to(device)
-        tgt_embedded = self.dropout(self.positional_encoding(self.decoder_embedding(tgt))).to(device)
+        src_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src)))
+        src_embedded = src_embedded.to(device)
+        tgt_embedded = self.dropout(self.positional_encoding(self.decoder_embedding(tgt)))
+        tgt_embedded = tgt_embedded.to(device)
 
         enc_output = src_embedded
         for enc_layer in self.encoder_layers:
