@@ -15,7 +15,7 @@ dim_feedforward = 2048
 num_classes = 3
 num_epochs = 3
 learning_rate = 2e-5
-batch_size = 32
+batch_size = 16
 dropout = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
@@ -228,7 +228,7 @@ def collate_fn(batch):
     input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     target_texts = [example["label"] for example in batch]
     tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
-    input_data = tokenized_data["input_ids"].clone().detach()
+    input_data = tokenized_data["input_ids"].clone().detach().to(device)
     target_data = torch.tensor(target_texts, dtype=torch.long).to(device)
     return input_data, target_data
 
