@@ -1,3 +1,5 @@
+import sys
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -5,6 +7,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import BertTokenizer
 import math
+import keyboard
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
@@ -178,9 +181,22 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
 
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs):
+    epoch = 0
+    batch = 0
     model.to(device)
     model.train()
-    for epoch in range(num_epochs):
+    checkpoint_filename = 'transformer_model_checkpoint.pth'
+    try:
+        checkpoint = torch.load(checkpoint_filename)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        batch = checkpoint['batch'] + 1
+        loss = checkpoint['loss']
+        print(f"Найден файл промежуточных результатов '{checkpoint_filename}'. Начинаем обучение с эпохи {epoch + 1}.")
+    except FileNotFoundError:
+        print(f"Файл промежуточных результатов '{checkpoint_filename}' не найден. Начинаем обучение с самого начала.")
+
+    for current_epoch in range(epoch, num_epochs):
         total_loss = 0.0
         # ПРОГРЕСС БАР
         for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
@@ -190,6 +206,18 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
+            while True:
+                if keyboard.read_key() == "p":
+                    # СОХРАНЕНИЕ МОДЕЛИ
+                    torch.save({
+                        'epoch': epoch,
+                        'batch': batch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': total_loss/len(train_dataloader),
+                    }, f'transformer_model_checkpoint_{epoch + 1}.pth')
+                    print('Модель сохранена по запросу пользователя (Ctrl+S).')
+                    sys.exit()
         avg_loss = total_loss / len(train_dataloader)
 
         model.eval()
