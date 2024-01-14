@@ -1,24 +1,26 @@
 import sys
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+import tqdm.notebook
 from datasets import load_dataset
 from transformers import BertTokenizer
 import math
 import keyboard
+import threading
+import time
+import queue
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-nhead = 8
-d_model = 1024
-num_layers = 6
-dim_feedforward = 2048
+nhead = 2
+d_model = 512
+num_layers = 2
+dim_feedforward = 512
 num_classes = 3
 num_epochs = 3
 learning_rate = 2e-5
-batch_size = 16
+batch_size = 8
 dropout = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
@@ -177,47 +179,73 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
 
         output = self.classifier(dec_output[:, 0, :])
         return output
+#ТРЭД ДЛЯ ЗАХВАТА КНОПКИ
+exit_signal_queue = queue.Queue()
+def keyboard_listener():
+    while True:
+        time.sleep(0.1)
+        if keyboard.is_pressed("p"):
+            exit_signal_queue.put(True)
 
+keyboard_thread = threading.Thread(target=keyboard_listener)
+keyboard_thread.daemon = True
+keyboard_thread.start()
 
+def save_checkpoint(epoch, batch, model, optimizer, loss):
+    torch.save({
+        'epoch': epoch,
+        'batch': batch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss': loss,
+    }, f'transformer_model_checkpoint.pth')
+
+def load_checkpoint():
+    try:
+        checkpoint = torch.load('transformer_model_checkpoint.pth')
+        return checkpoint
+    except FileNotFoundError:
+        return None
 # ФУНКЦИЯ ОБУЧЕНИЯ
 def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs):
     epoch = 0
     batch = 0
     model.to(device)
     model.train()
-    checkpoint_filename = 'transformer_model_checkpoint.pth'
-    try:
-        checkpoint = torch.load(checkpoint_filename)
+
+    # ЗАГРУЗКА ПРОМЕЖУТОЧНЫХ РЕЗУЛЬТАТОВ (ЕСЛИ ЕСТЬ)
+    checkpoint = load_checkpoint()
+    if checkpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         batch = checkpoint['batch'] + 1
+        epoch = checkpoint['epoch']
         loss = checkpoint['loss']
-        print(f"Найден файл промежуточных результатов '{checkpoint_filename}'. Начинаем обучение с эпохи {epoch + 1}.")
-    except FileNotFoundError:
-        print(f"Файл промежуточных результатов '{checkpoint_filename}' не найден. Начинаем обучение с самого начала.")
+        print(f"Найден файл промежуточных результатов. Начинаем обучение с эпохи {epoch + 1}, батча {batch}.")
+    else:
+        print("Файл промежуточных результатов не найден. Начинаем обучение с самого начала.")
 
-    for current_epoch in range(epoch, num_epochs):
+    for epoch in range(epoch, num_epochs):
         total_loss = 0.0
+        progress_bar = tqdm.notebook.tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False)
         # ПРОГРЕСС БАР
-        for input_batch, target_batch in tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False):
+        for input_batch, target_batch in progress_bar:
             optimizer.zero_grad()
             output_batch = model(input_batch, target_batch)
             loss = criterion(output_batch, target_batch)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-            while True:
-                if keyboard.read_key() == "p":
-                    # СОХРАНЕНИЕ МОДЕЛИ
-                    torch.save({
-                        'epoch': epoch,
-                        'batch': batch,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'loss': total_loss/len(train_dataloader),
-                    }, f'transformer_model_checkpoint_{epoch + 1}.pth')
-                    print('Модель сохранена по запросу пользователя (Ctrl+S).')
+            batch += 1
+
+            # СОХРАНЕНИЕ ПРОМЕЖУТОЧНЫХ РЕЗУЛЬТАТОВ
+            try:
+                if exit_signal_queue.get_nowait():
+                    save_checkpoint(epoch, batch, model, optimizer, total_loss / len(train_dataloader))
+                    print('Модель сохранена по запросу пользователя.')
                     sys.exit()
+            except queue.Empty:
+                pass
         avg_loss = total_loss / len(train_dataloader)
 
         model.eval()
@@ -225,7 +253,7 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
         total_samples = 0
 
         with torch.no_grad():
-            for input_batch, target_batch in tqdm(test_dataloader, desc='Testing', unit='batch', leave=False):
+            for input_batch, target_batch in tqdm.notebook.tqdm(test_dataloader, desc='Testing', unit='batch', leave=False):
                 output_batch = model(input_batch)
                 _, predicted = torch.max(output_batch, 1)
                 total_correct += (predicted == target_batch).sum().item()
