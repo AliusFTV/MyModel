@@ -2,7 +2,7 @@ import sys
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import tqdm.notebook
+import tqdm.notebook as notebook
 from datasets import load_dataset
 from transformers import BertTokenizer
 import math
@@ -10,6 +10,7 @@ import keyboard
 import threading
 import time
 import queue
+from tqdm import tqdm
 
 # ГИПЕРПАРАМЕТРЫ
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
@@ -26,7 +27,30 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 max_seq_length = 512
 src_vocab_size = tokenizer.vocab_size
 tgt_vocab_size = src_vocab_size
-
+#ДАННЫЕ
+dataset = load_dataset("glue", "mnli")
+train_data = dataset["train"]
+test_data = dataset["validation_matched"]
+exit_signal_queue = queue.Queue()
+# ПРЕОБРАЗОВАНИЕ В DATALOADER
+def collate_fn(batch):
+    input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
+    target_texts = [example["label"] for example in batch]
+    tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
+    input_data = tokenized_data["input_ids"].clone().detach().to(device)
+    target_data = torch.tensor(target_texts, dtype=torch.long).to(device)
+    return input_data, target_data
+train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
+#ТРЭД ДЛЯ ЗАХВАТА КНОПКИ
+def keyboard_listener():
+    while True:
+        time.sleep(0.1)
+        if keyboard.is_pressed("p"):
+            exit_signal_queue.put(True)
+keyboard_thread = threading.Thread(target=keyboard_listener)
+keyboard_thread.daemon = True
+keyboard_thread.start()
 
 def weights_init(m):
     if isinstance(m, nn.Linear):
@@ -179,18 +203,6 @@ class Transformer(nn.Module):           #АРХИТЕКТУРА
 
         output = self.classifier(dec_output[:, 0, :])
         return output
-#ТРЭД ДЛЯ ЗАХВАТА КНОПКИ
-exit_signal_queue = queue.Queue()
-def keyboard_listener():
-    while True:
-        time.sleep(0.1)
-        if keyboard.is_pressed("p"):
-            exit_signal_queue.put(True)
-
-keyboard_thread = threading.Thread(target=keyboard_listener)
-keyboard_thread.daemon = True
-keyboard_thread.start()
-
 def save_checkpoint(epoch, batch, model, optimizer, loss):
     torch.save({
         'epoch': epoch,
@@ -207,6 +219,7 @@ def load_checkpoint():
     except FileNotFoundError:
         return None
 # ФУНКЦИЯ ОБУЧЕНИЯ
+total_batches = len(train_dataloader)
 def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs):
     epoch = 0
     batch = 0
@@ -227,7 +240,10 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
 
     for epoch in range(epoch, num_epochs):
         total_loss = 0.0
-        progress_bar = tqdm.notebook.tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False)
+        progress_bar = tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', unit='batch', leave=False, position=0)
+        progress_bar.n = batch
+        progress_bar.last_print_n = batch
+        progress_bar.refresh()
         # ПРОГРЕСС БАР
         for input_batch, target_batch in progress_bar:
             optimizer.zero_grad()
@@ -237,7 +253,6 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
             optimizer.step()
             total_loss += loss.item()
             batch += 1
-
             # СОХРАНЕНИЕ ПРОМЕЖУТОЧНЫХ РЕЗУЛЬТАТОВ
             try:
                 if exit_signal_queue.get_nowait():
@@ -247,13 +262,14 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
             except queue.Empty:
                 pass
         avg_loss = total_loss / len(train_dataloader)
+        progress_bar.update(1)
 
         model.eval()
         total_correct = 0
         total_samples = 0
 
         with torch.no_grad():
-            for input_batch, target_batch in tqdm.notebook.tqdm(test_dataloader, desc='Testing', unit='batch', leave=False):
+            for input_batch, target_batch in notebook.tqdm(test_dataloader, desc='Testing', unit='batch', leave=False):
                 output_batch = model(input_batch)
                 _, predicted = torch.max(output_batch, 1)
                 total_correct += (predicted == target_batch).sum().item()
@@ -261,8 +277,6 @@ def train_model(model, train_dataloader, test_dataloader, criterion, optimizer, 
 
         accuracy = total_correct / total_samples
         print(f'Эпохи {epoch + 1}/{num_epochs}, Потери: {avg_loss:.4f}, Точность: {accuracy:.4f}')
-
-
 # ИНИЦИАЛИЗАЦИЯ МОДЕЛИ, ОПТИМИЗАТОР И КРИТЕРИИ
 model = Transformer(src_vocab_size, tgt_vocab_size, d_model, nhead, num_layers, dim_feedforward, max_seq_length, dropout)
 model.apply(weights_init)
@@ -272,26 +286,6 @@ for state in optimizer.state.values():
         if torch.is_tensor(v):
             state[k] = v.to(device)
 criterion = nn.CrossEntropyLoss()
-
-# ДАННЫЕ
-dataset = load_dataset("glue", "mnli")
-train_data = dataset["train"]
-test_data = dataset["validation_matched"]
-
-
-# ПРЕОБРАЗОВАНИЕ В DATALOADER
-def collate_fn(batch):
-    input_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
-    target_texts = [example["label"] for example in batch]
-    tokenized_data = tokenizer(input_texts, return_tensors="pt", padding='longest')
-    input_data = tokenized_data["input_ids"].clone().detach().to(device)
-    target_data = torch.tensor(target_texts, dtype=torch.long).to(device)
-    return input_data, target_data
-
-
-train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
-
 # ОБУЧЕНИЕ
 train_model(model, train_dataloader, test_dataloader, criterion, optimizer, num_epochs)
 torch.save(model.state_dict(), 'adv_model.pth')
