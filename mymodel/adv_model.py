@@ -263,10 +263,10 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
         progress_bar.last_print_n = batch
         progress_bar.refresh()
         # PROGRESS BAR
-        for input_batch, target_batch in progress_bar:
+        for inp_batch, target_batch in progress_bar:
             optimizer.zero_grad()
-            output_batch = model(input_batch, target_batch)
-            loss = criterion(output_batch, target_batch)
+            out_batch = model(inp_batch, target_batch)
+            loss = criterion(out_batch, target_batch)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
@@ -287,9 +287,9 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
         total_samples = 0
 
         with torch.no_grad():
-            for input_batch, target_batch in tqdm(test_dl, desc='Testing', unit='batch', leave=False):
-                output_batch = model(input_batch)
-                _, predicted = torch.max(output_batch, 1)
+            for inp_batch, target_batch in tqdm(test_dl, desc='Testing', unit='batch', leave=False):
+                out_batch = model(inp_batch, out_batch)
+                _, predicted = torch.max(out_batch, 1)
                 total_correct += (predicted == target_batch).sum().item()
                 total_samples += target_batch.size(0)
 
