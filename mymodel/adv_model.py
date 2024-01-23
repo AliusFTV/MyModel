@@ -13,24 +13,24 @@ import keyboard
 
 # HYPERPARAMS
 TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-HEADS = 2
-D_MOD = 512
-LAYERS = 2
-D_FF = 512
+HEADS = 8
+D_MOD = 1024
+LAYERS = 6
+D_FF = 2048
 CLASSES = 3
 EPOCHS = 3
 L_RATE = 2e-5
-B_SIZE = 8
+B_SIZE = 16
 DROPOUT = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-MAX_S_LENGTH = 512
+MAX_LENGTH = 512
 SRC_SIZE = TK.vocab_size
 TGT_SIZE = SRC_SIZE
 # DATA_SECTION
-dataset = load_dataset("glue", "mnli")
-train_data = dataset["train"]
-test_data = dataset["validation_matched"]
-exit_signal_queue = queue.Queue()
+DATASET = load_dataset("glue", "mnli")
+TRAIN_DATA = DATASET["train"]
+TEST_DATA = DATASET["validation_matched"]
+EXIT_SIGNAL = queue.Queue()
 # THE DATALOADER
 
 
@@ -43,8 +43,8 @@ def collate_fn(batch):
     return i_data, t_data
 
 
-TRAIN_DL = DataLoader(train_data, batch_size=B_SIZE, shuffle=True, collate_fn=collate_fn)
-TEST_DL = DataLoader(test_data, batch_size=B_SIZE, shuffle=False, collate_fn=collate_fn)
+TRAIN_DL = DataLoader(TRAIN_DATA, batch_size=B_SIZE, shuffle=True, collate_fn=collate_fn)
+TEST_DL = DataLoader(TEST_DATA, batch_size=B_SIZE, shuffle=False, collate_fn=collate_fn)
 # KEYBOARD CATCH THREAD
 
 
@@ -52,7 +52,7 @@ def keyboard_listener():
     while True:
         time.sleep(0.1)
         if keyboard.is_pressed("p"):
-            exit_signal_queue.put(True)
+            EXIT_SIGNAL.put(True)
 
 
 K_THREAD = threading.Thread(target=keyboard_listener)
@@ -194,7 +194,7 @@ class Transformer(nn.Module):           # ARCHITECTURE
     def gen_mask(src, tgt):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
         tgt_mask = (tgt != 0).unsqueeze(1).unsqueeze(2)
-        seq_len = MAX_S_LENGTH
+        seq_len = MAX_LENGTH
         nopeak_mask = (1 - torch.triu(torch.ones(1, seq_len, seq_len), diagonal=1)).bool()
         tgt_mask = tgt_mask & nopeak_mask.to(device)
         return src_mask, tgt_mask
@@ -273,7 +273,7 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
             batch += 1
             # SAVING TEMP RESULTS
             try:
-                if exit_signal_queue.get_nowait():
+                if EXIT_SIGNAL.get_nowait():
                     save_checkpoint(epoch, batch, model, optimizer, total_loss / len(train_dl))
                     print('Model saved by user input.')
                     sys.exit()
@@ -298,7 +298,7 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_S_LENGTH, DROPOUT)
+MODEL = Transformer(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
 MODEL.apply(weights_init)
 OPTIMIZER = torch.optim.Adam(MODEL.parameters(), lr=L_RATE)
 for state in OPTIMIZER.state.values():
