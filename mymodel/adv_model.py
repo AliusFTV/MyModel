@@ -13,14 +13,14 @@ import keyboard
 
 # HYPERPARAMS
 TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-HEADS = 8
-D_MOD = 1024
-LAYERS = 6
-D_FF = 2048
+HEADS = 2
+D_MOD = 512
+LAYERS = 2
+D_FF = 512
 CLASSES = 3
 EPOCHS = 3
 L_RATE = 2e-5
-B_SIZE = 16
+B_SIZE = 8
 DROPOUT = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MAX_LENGTH = 512
@@ -51,7 +51,7 @@ TEST_DL = DataLoader(TEST_DATA, batch_size=B_SIZE, shuffle=False, collate_fn=col
 def keyboard_listener():
     while True:
         time.sleep(0.1)
-        if keyboard.is_pressed("p"):
+        if keyboard.is_pressed("/"):
             EXIT_SIGNAL.put(True)
 
 
@@ -194,8 +194,8 @@ class Transformer(nn.Module):           # ARCHITECTURE
     def gen_mask(src, tgt):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
         tgt_mask = (tgt != 0).unsqueeze(1).unsqueeze(2)
-        seq_len = MAX_LENGTH
-        nopeak_mask = (1 - torch.triu(torch.ones(1, seq_len, seq_len), diagonal=1)).bool()
+        vocab_size = SRC_SIZE
+        nopeak_mask = (1 - torch.triu(torch.ones(1, vocab_size, vocab_size), diagonal=1)).bool()
         tgt_mask = tgt_mask & nopeak_mask.to(device)
         return src_mask, tgt_mask
 
@@ -288,7 +288,7 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
 
         with torch.no_grad():
             for inp_batch, target_batch in tqdm(test_dl, desc='Testing', unit='batch', leave=False):
-                out_batch = model(inp_batch, out_batch)
+                out_batch = model(inp_batch, target_batch)
                 _, predicted = torch.max(out_batch, 1)
                 total_correct += (predicted == target_batch).sum().item()
                 total_samples += target_batch.size(0)
