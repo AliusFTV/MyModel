@@ -187,15 +187,15 @@ class Transformer(nn.Module):           # ARCHITECTURE
         self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, d_ff, dropout) for _ in range(layers)])
         self.dec_l = nn.ModuleList([DecoderLayer(d_m, heads, d_ff, dropout) for _ in range(layers)])
 
-        self.classifier = nn.Linear(d_m, tgt_size)
+        self.classifier = nn.Linear(d_m, CLASSES)
         self.dropout = nn.Dropout(dropout)
 
     @staticmethod
     def gen_mask(src, tgt):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
         tgt_mask = (tgt != 0).unsqueeze(1).unsqueeze(2)
-        vocab_size = SRC_SIZE
-        nopeak_mask = (1 - torch.triu(torch.ones(1, vocab_size, vocab_size), diagonal=1)).bool()
+        seq_length = MAX_LENGTH
+        nopeak_mask = (1 - torch.triu(torch.ones(1, seq_length, seq_length), diagonal=1)).bool()
         tgt_mask = tgt_mask & nopeak_mask.to(device)
         return src_mask, tgt_mask
 
