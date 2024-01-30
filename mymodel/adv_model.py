@@ -295,6 +295,9 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
 
         accuracy = total_correct / total_samples
         print(f'Epochs {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}')
+        progress_bar.n = len(train_dl)
+        progress_bar.last_print_n = len(train_dl)
+        progress_bar.set_postfix(epoch=epoch + 1)
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
