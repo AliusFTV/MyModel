@@ -6,7 +6,7 @@ class SystemTrayApp(QApplication):
         super(SystemTrayApp, self).__init__(sys_argv)
         self.tamagotchi_app = tamagotchi_app
 
-        self.tray_icon = QSystemTrayIcon(QIcon("sys.png"), self)
+        self.tray_icon = QSystemTrayIcon(QIcon("../sys.png"), self)
 
         self.tray_menu = QMenu()
         self.show_action = QAction("Показать", self)

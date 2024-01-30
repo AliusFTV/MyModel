@@ -1,11 +1,11 @@
 from PyQt5.QtCore import Qt
 from SAL import Item
-from custom_menu import CustomMenuHelper, DraggableButton, DraggableLabel
+from App_Additions.custom_menu import Labels_Buttons_BG_FG, DraggableButton, DraggableLabel
 
 
 class Shop:
     def __init__(self, tamagotchi_app):
-        label_and_button_style = CustomMenuHelper.get_label_and_button_style()
+        label_and_button_style = Labels_Buttons_BG_FG.get_label_and_button_style()
         self.tamagotchi_app = tamagotchi_app
         self.save_manager = tamagotchi_app.save_manager
         self.inventory = tamagotchi_app.inventory

@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QMenu, QMenuBar, QPushButton, QLabel
+from PyQt5.QtWidgets import QPushButton, QLabel
 
 
 class DraggableButton(QPushButton):
@@ -62,46 +62,7 @@ class DraggableLabel(QLabel):
 
         super(DraggableLabel, self).mouseReleaseEvent(event)
 
-
-class CustomMenu(QMenuBar):
-    def __init__(self, parent=None):
-        super(CustomMenu, self).__init__(parent)
-
-        self.setStyleSheet("""
-            QMenuBar {
-                background-color: transparent;
-                border: 1px solid transparent;
-            }
-            QMenuBar::item {
-                background-color: rgba(0, 0, 0, 180);
-                color: white;
-                padding: 0;
-            }
-            QMenuBar::item:selected {
-                background-color: lightgreen;
-            }
-        """)
-
-class CustomAppMenu(QMenu):
-    def __init__(self, parent=None):
-        super(CustomAppMenu, self).__init__(parent)
-
-        self.setStyleSheet("""
-            QMenu {
-                background-color: transparent;
-                border: 1px solid transparent;
-            }
-            QMenu::item {
-                background-color: rgba(0, 0, 0, 180);
-                color: white;
-                padding: 0;
-            }
-            QMenu::item:selected {
-                background-color: lightgreen;
-            }
-        """)
-
-class CustomMenuHelper:
+class Labels_Buttons_BG_FG:
     @staticmethod
     def apply_style_to_labels_and_buttons(labels, buttons):
         style = """
@@ -111,12 +72,18 @@ class CustomMenuHelper:
                 border: 1.5px solid white;
                 padding: 1px;
             }
-            DraggableButton {
+            QPushButton {
                 background-color: #555;
                 color: white;
                 border: 2px solid white;
                 padding: 0;
-                margin: 0;
+                margin:0;
+                position: absolute;
+                left: 0;
+                right: 100px;
+                bottom: 0;
+                top: 0;
+                
             }
             QPushButton:hover {
                 background-color: #477;

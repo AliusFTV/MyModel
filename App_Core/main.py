@@ -5,10 +5,9 @@ from tamagotchi_worker import TamagotchiWorker
 from time_sync import TimeSync
 import time
 from SAL import SaveManager
-from Shop import Shop
+from App_Additions.Shop import Shop
 from system_tray_app import SystemTrayApp
-from custom_menu import CustomMenu, CustomMenuHelper, CustomAppMenu, DraggableButton, DraggableLabel
-
+from App_Additions.custom_menu import Labels_Buttons_BG_FG, DraggableButton, DraggableLabel, QPushButton
 
 
 class TamagotchiApp(QWidget):
@@ -35,20 +34,15 @@ class TamagotchiApp(QWidget):
         self.create_labels()
         self.update_tamagochi_state_thread()
         self.button()
-        self.custom_menu = CustomMenu(self)
-        self.custom_app_menu = CustomAppMenu(self)
         self.v_layout = QVBoxLayout(self)
         self.v_layout.setSpacing(0)
-        self.v_layout.setMenuBar(self.custom_menu)
-        self.custom_menu.addMenu(self.custom_app_menu)
-        CustomMenuHelper.apply_style_to_labels_and_buttons(self.labels, self.buttons)
+        Labels_Buttons_BG_FG.apply_style_to_labels_and_buttons(self.labels, self.buttons)
         for label in self.labels:
             self.v_layout.addWidget(label)
             label.setFixedSize(300, 25)
         for button in self.buttons:
             self.v_layout.addWidget(button)
             button.setFixedSize(400, 30)
-        self.v_layout.setSpacing(0)
         self.load_save()
 
     def sync_time(self):
@@ -121,7 +115,7 @@ class TamagotchiApp(QWidget):
         self.update_labels()
 
     def button(self):
-        self.button_feed1 = DraggableButton("Бросить еду")
+        self.button_feed1 = QPushButton("Бросить еду")
         self.button_feed1.setObjectName("feed_rough")
         self.button_feed1.clicked.connect(lambda: self.feed("throw", 5, -3, -6, -5))
         self.buttons.append(self.button_feed1)
@@ -160,7 +154,6 @@ class TamagotchiApp(QWidget):
         self.button_exit.setObjectName("exit")
         self.button_exit.clicked.connect(self.on_exit)
         self.buttons.append(self.button_exit)
-        self.save_manager.printd(self.buttons)
 
 
     def show_shop_widgets(self):

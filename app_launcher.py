@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QApplication
-from main import TamagotchiApp
+from App_Core.main import TamagotchiApp
 
 if __name__ == "__main__":
     app = QApplication([])

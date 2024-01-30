@@ -19,7 +19,7 @@ class SaveManager:
     def __init__(self, tamagotchi_app):
         self.tamagotchi_app = tamagotchi_app
         global save_path
-        save_path = "C:/Users/alius/PycharmProjects/pythonProject/tg_save.json"
+        save_path = "/tg_save.json"
 
     def save_state(self, tamagotchi_state, inventory, button_positions):
         state_to_save = dict(
@@ -57,6 +57,3 @@ class SaveManager:
                         button.move(position['x'], position['y'])
                         button.show()
                         break
-
-    def printd(self, buttons):
-        print(buttons)
