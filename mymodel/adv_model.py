@@ -260,8 +260,9 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
         total_loss = 0.0
         progress_bar = tqdm(train_dl, desc=f'Epoch {epoch + 1}/{epochs}', unit='batch', leave=False, position=0)
         progress_bar.n = batch
-        progress_bar.last_print_n = batch
         progress_bar.refresh()
+        progress_bar.n = 0
+
         # PROGRESS BAR
         for inp_batch, target_batch in progress_bar:
             optimizer.zero_grad()
@@ -280,7 +281,6 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
             except queue.Empty:
                 pass
         avg_loss = total_loss / len(train_dl)
-        progress_bar.update(1)
 
         model.eval()
         total_correct = 0
@@ -295,9 +295,8 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
 
         accuracy = total_correct / total_samples
         print(f'Epochs {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}')
-        progress_bar.n = len(train_dl)
-        progress_bar.last_print_n = len(train_dl)
-        progress_bar.set_postfix(epoch=epoch + 1)
+        batch = 0
+        progress_bar.n = 0
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
