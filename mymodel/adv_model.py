@@ -29,12 +29,13 @@ TGT_SIZE = SRC_SIZE
 # DATA_SECTION
 DATASET = load_dataset("glue", "mnli")
 TRAIN_DATA = DATASET["train"]
-TEST_DATA = DATASET["validation_matched"]
+VALIDATION_DATA = DATASET["validation_matched"]
+TEST_DATA = DATASET["test_matched"]
 EXIT_SIGNAL = queue.Queue()
 # THE DATALOADER
 
 
-def collate_fn(batch):
+def train_collate_fn(batch):
     i_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
     t_texts = [example["label"] for example in batch]
     tk_data = TK(i_texts, return_tensors="pt", padding='longest')
@@ -43,8 +44,18 @@ def collate_fn(batch):
     return i_data, t_data
 
 
-TRAIN_DL = DataLoader(TRAIN_DATA, batch_size=B_SIZE, shuffle=True, collate_fn=collate_fn)
-TEST_DL = DataLoader(TEST_DATA, batch_size=B_SIZE, shuffle=False, collate_fn=collate_fn)
+def test_collate_fn(batch):
+    i_texts = [example["premise"] + " [SEP] " + example["hypothesis"] for example in batch]
+    tk_data = TK(i_texts, return_tensors="pt", padding='longest')
+    i_data = tk_data["input_ids"].clone().detach().to(device)
+    return i_data
+
+
+TRAIN_DL = DataLoader(TRAIN_DATA, batch_size=B_SIZE, shuffle=True, collate_fn=train_collate_fn)
+VALIDATION_DL = DataLoader(VALIDATION_DATA, batch_size=B_SIZE, shuffle=False, collate_fn=train_collate_fn)
+TEST_DL = DataLoader(TEST_DATA, batch_size=B_SIZE, shuffle=True, collate_fn=test_collate_fn)
+
+
 # KEYBOARD CATCH THREAD
 
 
@@ -177,7 +188,7 @@ class DecoderLayer(nn.Module):    # THE HIDDEN LAYER(DECODE)
         return x
 
 
-class Transformer(nn.Module):           # ARCHITECTURE
+class Transformer_Training(nn.Module):           # ARCHITECTURE FOR TRAINING
     def __init__(self, src_size, tgt_size, d_m, heads, layers, d_ff, max_s_length, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
@@ -215,6 +226,26 @@ class Transformer(nn.Module):           # ARCHITECTURE
 
         output = self.classifier(dec_out[:, 0, :])
         return output
+
+
+class Transformer_Testing(nn.Module):
+    def __init__(self, src_size, d_m, heads, layers, d_ff, max_s_length, dropout):
+        super().__init__()
+        self.enc_emb = nn.Embedding(src_size, d_m)
+        self.pos_enc = PositionalEncoding(d_m, max_s_length)
+        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, d_ff, dropout) for _ in range(layers)])
+        self.classifier = nn.Linear(d_m, CLASSES)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, src):
+        src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
+        src_emb = self.dropout(self.pos_enc(self.enc_emb(src))).to(device)
+
+        enc_out = src_emb
+        for enc_l in self.enc_l:
+            enc_out = enc_l(enc_out, src_mask)
+
+        return self.classifier(enc_out[:, 0, :])
 
 
 def save_checkpoint(epoch, batch, model, optimizer, loss):
@@ -297,10 +328,26 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
         print(f'Epochs {epoch + 1}/{epochs}, Loss: {avg_loss:.4f}, Accuracy: {accuracy:.4f}')
         batch = 0
         progress_bar.n = 0
+
+
+def test_model(model, test_dl):
+    model.load_state_dict(torch.load('512_dimensions.pth', map_location=torch.device('cpu')), strict=False)
+    model.eval()
+
+    with torch.no_grad():
+        for inp_batch in tqdm(test_dl, desc='Testing', unit='batch', leave=False):
+            out_batch = model(inp_batch)
+            result = []
+
+            for i in range(len(inp_batch)):
+                input_data = inp_batch[i]
+                prediction = torch.argmax(out_batch[i]).item()
+                result.append(prediction)
+            print(result)
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
+MODEL = Transformer_Training(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
 MODEL.apply(weights_init)
 OPTIMIZER = torch.optim.Adam(MODEL.parameters(), lr=L_RATE)
 for state in OPTIMIZER.state.values():
@@ -308,6 +355,20 @@ for state in OPTIMIZER.state.values():
         if torch.is_tensor(v):
             state[k] = v.to(device)
 CRITERION = nn.CrossEntropyLoss()
-# TRAINING
-train_model(MODEL, TRAIN_DL, TEST_DL, CRITERION, OPTIMIZER, EPOCHS)
-torch.save(MODEL.state_dict(), 'adv_model.pth')
+# TEST AND TRAINING
+# USER INTERFACE
+print("What we are doing?")
+print("1. Training")
+print("2. Testing")
+choice = input("Choose option : ")
+
+if choice == "1":
+    EPOCHS = int(input("Set the number of epochs: "))
+    train_model(MODEL, TRAIN_DL, VALIDATION_DL, CRITERION, OPTIMIZER, EPOCHS)
+    torch.save(MODEL.state_dict(), 'adv_model.pth')
+    print("The model saved successfully.")
+elif choice == "2":
+    MODEL = Transformer_Testing(SRC_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
+    test_model(MODEL, TEST_DL)
+else:
+    print("The Wrong Input, Please choose the 1 or 2.")
