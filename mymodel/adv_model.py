@@ -2,7 +2,6 @@ import threading
 import math
 import time
 import queue
-import sys
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -18,8 +17,7 @@ D_MOD = 512
 LAYERS = 2
 D_FF = 512
 CLASSES = 3
-EPOCHS = 3
-L_RATE = 2e-5
+L_RATE = 5e-6
 B_SIZE = 8
 DROPOUT = 0.1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -188,7 +186,7 @@ class DecoderLayer(nn.Module):    # THE HIDDEN LAYER(DECODE)
         return x
 
 
-class Transformer_Training(nn.Module):           # ARCHITECTURE FOR TRAINING
+class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
     def __init__(self, src_size, tgt_size, d_m, heads, layers, d_ff, max_s_length, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
@@ -210,7 +208,7 @@ class Transformer_Training(nn.Module):           # ARCHITECTURE FOR TRAINING
         tgt_mask = tgt_mask & nopeak_mask.to(device)
         return src_mask, tgt_mask
 
-    def forward(self, src, tgt):
+    def forward(self, src, tgt=None):
         src_mask, tgt_mask = self.gen_mask(src, tgt)
         src_emb = self.dropout(self.pos_enc(self.enc_emb(src))).to(device)
         tgt_emb = self.dropout(self.pos_enc(self.dec_emb(tgt))).to(device)
@@ -228,7 +226,7 @@ class Transformer_Training(nn.Module):           # ARCHITECTURE FOR TRAINING
         return output
 
 
-class Transformer_Testing(nn.Module):
+class Transformer(nn.Module):
     def __init__(self, src_size, d_m, heads, layers, d_ff, max_s_length, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
@@ -292,34 +290,25 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
         progress_bar = tqdm(train_dl, desc=f'Epoch {epoch + 1}/{epochs}', unit='batch', leave=False, position=0)
         progress_bar.n = batch
         progress_bar.refresh()
-        progress_bar.n = 0
-
         # PROGRESS BAR
         for inp_batch, target_batch in progress_bar:
             optimizer.zero_grad()
-            out_batch = model(inp_batch, target_batch)
+            out_batch = model(inp_batch)
             loss = criterion(out_batch, target_batch)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
             batch += 1
-            # SAVING TEMP RESULTS
-            try:
-                if EXIT_SIGNAL.get_nowait():
-                    save_checkpoint(epoch, batch, model, optimizer, total_loss / len(train_dl))
-                    print('Model saved by user input.')
-                    sys.exit()
-            except queue.Empty:
-                pass
-        avg_loss = total_loss / len(train_dl)
 
+        avg_loss = total_loss / len(train_dl)
+        progress_bar.n = 0
         model.eval()
         total_correct = 0
         total_samples = 0
 
         with torch.no_grad():
             for inp_batch, target_batch in tqdm(test_dl, desc='Testing', unit='batch', leave=False):
-                out_batch = model(inp_batch, target_batch)
+                out_batch = model(inp_batch)
                 _, predicted = torch.max(out_batch, 1)
                 total_correct += (predicted == target_batch).sum().item()
                 total_samples += target_batch.size(0)
@@ -337,17 +326,15 @@ def test_model(model, test_dl):
     with torch.no_grad():
         for inp_batch in tqdm(test_dl, desc='Testing', unit='batch', leave=False):
             out_batch = model(inp_batch)
-            result = []
-
             for i in range(len(inp_batch)):
                 input_data = inp_batch[i]
                 prediction = torch.argmax(out_batch[i]).item()
-                result.append(prediction)
-            print(result)
+                print(f"Input Data: {input_data}")
+                print(f"Prediction: {prediction}\n")
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer_Training(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
+MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
 MODEL.apply(weights_init)
 OPTIMIZER = torch.optim.Adam(MODEL.parameters(), lr=L_RATE)
 for state in OPTIMIZER.state.values():
@@ -355,20 +342,20 @@ for state in OPTIMIZER.state.values():
         if torch.is_tensor(v):
             state[k] = v.to(device)
 CRITERION = nn.CrossEntropyLoss()
-# TEST AND TRAINING
+
 # USER INTERFACE
 print("What we are doing?")
 print("1. Training")
-print("2. Testing")
+print("2. Generate_Training")
 choice = input("Choose option : ")
-
+# TEST AND TRAINING
 if choice == "1":
     EPOCHS = int(input("Set the number of epochs: "))
     train_model(MODEL, TRAIN_DL, VALIDATION_DL, CRITERION, OPTIMIZER, EPOCHS)
     torch.save(MODEL.state_dict(), 'adv_model.pth')
     print("The model saved successfully.")
 elif choice == "2":
-    MODEL = Transformer_Testing(SRC_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
+    MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
     test_model(MODEL, TEST_DL)
 else:
     print("The Wrong Input, Please choose the 1 or 2.")
