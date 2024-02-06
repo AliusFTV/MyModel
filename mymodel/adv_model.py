@@ -5,6 +5,7 @@ import queue
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from adabound import AdaBound
 from tqdm import tqdm
 from datasets import load_dataset
 from transformers import BertTokenizer
@@ -15,11 +16,9 @@ TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
 HEADS = 2
 D_MOD = 512
 LAYERS = 2
-D_FF = 512
 CLASSES = 3
-L_RATE = 5e-6
-B_SIZE = 8
-DROPOUT = 0.1
+B_SIZE = 64
+DROPOUT = 0.25
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MAX_LENGTH = 512
 SRC_SIZE = TK.vocab_size
@@ -117,12 +116,12 @@ class MultiHeadAttention(nn.Module):  # THE NEURON ATTENTION
 
 
 class FeedForwardLayer(nn.Module):  # FORWARD PASS LAYER
-    def __init__(self, d_m, d_ff):
+    def __init__(self, d_m):
         super().__init__()
         self.ff = nn.Sequential(
-            nn.Linear(d_m, d_ff),
-            nn.LeakyReLU(negative_slope=0.01),
-            nn.Linear(d_ff, d_m)
+            nn.Linear(d_m, 4 * d_m),
+            nn.GELU(),
+            nn.Linear(4 * d_m, d_m)
         )
 
     def forward(self, x):
@@ -149,10 +148,10 @@ class PositionalEncoding(nn.Module):         # WORD POSITION
 
 
 class EncoderLayer(nn.Module):  # THE HIDDEN LAYER(ENCODE)
-    def __init__(self, d_m, heads, d_ff, dropout):
+    def __init__(self, d_m, heads, dropout):
         super().__init__()
         self.self_attn = MultiHeadAttention(d_m, heads)
-        self.ff = FeedForwardLayer(d_m, d_ff)
+        self.ff = FeedForwardLayer(d_m)
         self.norm1 = nn.LayerNorm(d_m)
         self.norm2 = nn.LayerNorm(d_m)
         self.dropout = nn.Dropout(dropout)
@@ -166,11 +165,11 @@ class EncoderLayer(nn.Module):  # THE HIDDEN LAYER(ENCODE)
 
 
 class DecoderLayer(nn.Module):    # THE HIDDEN LAYER(DECODE)
-    def __init__(self, d_m, heads, d_ff, dropout):
+    def __init__(self, d_m, heads, dropout):
         super().__init__()
         self.self_attn = MultiHeadAttention(d_m, heads)
         self.cross_attn = MultiHeadAttention(d_m, heads)
-        self.f_f = FeedForwardLayer(d_m, d_ff)
+        self.f_f = FeedForwardLayer(d_m)
         self.norm1 = nn.LayerNorm(d_m)
         self.norm2 = nn.LayerNorm(d_m)
         self.norm3 = nn.LayerNorm(d_m)
@@ -187,14 +186,14 @@ class DecoderLayer(nn.Module):    # THE HIDDEN LAYER(DECODE)
 
 
 class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
-    def __init__(self, src_size, tgt_size, d_m, heads, layers, d_ff, max_s_length, dropout):
+    def __init__(self, src_size, tgt_size, d_m, heads, layers, max_s_length, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
         self.dec_emb = nn.Embedding(tgt_size, d_m)
         self.pos_enc = PositionalEncoding(d_m, max_s_length)
 
-        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, d_ff, dropout) for _ in range(layers)])
-        self.dec_l = nn.ModuleList([DecoderLayer(d_m, heads, d_ff, dropout) for _ in range(layers)])
+        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, dropout) for _ in range(layers)])
+        self.dec_l = nn.ModuleList([DecoderLayer(d_m, heads, dropout) for _ in range(layers)])
 
         self.classifier = nn.Linear(d_m, CLASSES)
         self.dropout = nn.Dropout(dropout)
@@ -227,12 +226,13 @@ class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
 
 
 class Transformer(nn.Module):
-    def __init__(self, src_size, d_m, heads, layers, d_ff, max_s_length, dropout):
+    def __init__(self, src_size, d_m, heads, layers, max_s_length, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
         self.pos_enc = PositionalEncoding(d_m, max_s_length)
-        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, d_ff, dropout) for _ in range(layers)])
+        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, dropout) for _ in range(layers)])
         self.classifier = nn.Linear(d_m, CLASSES)
+        dropout = 0.5
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, src):
@@ -320,7 +320,7 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
 
 
 def test_model(model, test_dl):
-    model.load_state_dict(torch.load('512_dimensions.pth', map_location=torch.device('cpu')), strict=False)
+    model.load_state_dict(torch.load('adv_model.pth', map_location=torch.device('cpu')), strict=False)
     model.eval()
 
     with torch.no_grad():
@@ -334,9 +334,9 @@ def test_model(model, test_dl):
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
+MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
 MODEL.apply(weights_init)
-OPTIMIZER = torch.optim.Adam(MODEL.parameters(), lr=L_RATE)
+OPTIMIZER = AdaBound(MODEL.parameters(), lr=1e-5, final_lr=1e-3)
 for state in OPTIMIZER.state.values():
     for k, v in state.items():
         if torch.is_tensor(v):
@@ -346,7 +346,8 @@ CRITERION = nn.CrossEntropyLoss()
 # USER INTERFACE
 print("What we are doing?")
 print("1. Training")
-print("2. Generate_Training")
+print("2. Testing")
+print("3. Generate_Training")
 choice = input("Choose option : ")
 # TEST AND TRAINING
 if choice == "1":
@@ -355,7 +356,8 @@ if choice == "1":
     torch.save(MODEL.state_dict(), 'adv_model.pth')
     print("The model saved successfully.")
 elif choice == "2":
-    MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, D_FF, MAX_LENGTH, DROPOUT)
     test_model(MODEL, TEST_DL)
+elif choice == "3":
+    MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
 else:
     print("The Wrong Input, Please choose the 1 or 2.")
