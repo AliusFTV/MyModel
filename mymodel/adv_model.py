@@ -5,7 +5,6 @@ import queue
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from adabound import AdaBound
 from tqdm import tqdm
 from datasets import load_dataset
 from transformers import BertTokenizer
@@ -13,11 +12,11 @@ import keyboard
 
 # HYPERPARAMS
 TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-HEADS = 2
-D_MOD = 512
-LAYERS = 2
+HEADS = 8
+D_MOD = 1024
+LAYERS = 6
 CLASSES = 3
-B_SIZE = 64
+B_SIZE = 8
 DROPOUT = 0.25
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MAX_LENGTH = 512
@@ -226,10 +225,9 @@ class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
 
 
 class Transformer(nn.Module):
-    def __init__(self, src_size, d_m, heads, layers, max_s_length, dropout):
+    def __init__(self, src_size, d_m, heads, layers, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
-        self.pos_enc = PositionalEncoding(d_m, max_s_length)
         self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, dropout) for _ in range(layers)])
         self.classifier = nn.Linear(d_m, CLASSES)
         dropout = 0.5
@@ -237,7 +235,7 @@ class Transformer(nn.Module):
 
     def forward(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
-        src_emb = self.dropout(self.pos_enc(self.enc_emb(src))).to(device)
+        src_emb = self.dropout(self.enc_emb(src)).to(device)
 
         enc_out = src_emb
         for enc_l in self.enc_l:
@@ -299,6 +297,10 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
             optimizer.step()
             total_loss += loss.item()
             batch += 1
+            if not EXIT_SIGNAL.empty():
+                save_checkpoint(epoch, batch, model, optimizer, loss)
+                print("Checkpoint saved.")
+                EXIT_SIGNAL.get()
 
         avg_loss = total_loss / len(train_dl)
         progress_bar.n = 0
@@ -334,9 +336,9 @@ def test_model(model, test_dl):
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
+MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, DROPOUT)
 MODEL.apply(weights_init)
-OPTIMIZER = AdaBound(MODEL.parameters(), lr=1e-5, final_lr=1e-3)
+OPTIMIZER = torch.optim.AdamW(MODEL.parameters(), lr=1e-5, weight_decay=0.001)
 for state in OPTIMIZER.state.values():
     for k, v in state.items():
         if torch.is_tensor(v):
