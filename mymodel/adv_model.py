@@ -69,7 +69,7 @@ K_THREAD.start()
 
 def weights_init(m):
     if isinstance(m, nn.Linear):
-        nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
+        nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='gelu')
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
 
