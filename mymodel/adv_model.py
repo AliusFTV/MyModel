@@ -9,10 +9,11 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import BertTokenizer
 import keyboard
+from adabound import AdaBound
 
 # HYPERPARAMS
 TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-HEADS = 8
+HEADS = 16
 D_MOD = 1024
 LAYERS = 6
 CLASSES = 3
@@ -338,12 +339,7 @@ def test_model(model, test_dl):
 
 MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, DROPOUT)
 MODEL.apply(weights_init)
-OPTIMIZER = torch.optim.AdamW(MODEL.parameters(), lr=1e-5, weight_decay=0.001)
-for state in OPTIMIZER.state.values():
-    for k, v in state.items():
-        if torch.is_tensor(v):
-            state[k] = v.to(device)
-CRITERION = nn.CrossEntropyLoss()
+
 
 # USER INTERFACE
 print("What we are doing?")
@@ -354,6 +350,14 @@ choice = input("Choose option : ")
 # TEST AND TRAINING
 if choice == "1":
     EPOCHS = int(input("Set the number of epochs: "))
+    lr = float(input("Specify the learning rate: "))
+    w_d = float(input("Specify the weight decay: "))
+    OPTIMIZER = AdaBound(MODEL.parameters(), lr=lr, weight_decay=w_d)
+    for state in OPTIMIZER.state.values():
+        for k, v in state.items():
+            if torch.is_tensor(v):
+                state[k] = v.to(device)
+    CRITERION = nn.CrossEntropyLoss()
     train_model(MODEL, TRAIN_DL, VALIDATION_DL, CRITERION, OPTIMIZER, EPOCHS)
     torch.save(MODEL.state_dict(), 'adv_model.pth')
     print("The model saved successfully.")
@@ -362,4 +366,4 @@ elif choice == "2":
 elif choice == "3":
     MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
 else:
-    print("The Wrong Input, Please choose the 1 or 2.")
+    print("The Wrong Input, Please choose the 1-3.")
