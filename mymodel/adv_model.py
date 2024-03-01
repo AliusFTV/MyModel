@@ -5,11 +5,11 @@ import queue
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from adabound import AdaBound
 from tqdm import tqdm
 from datasets import load_dataset
 from transformers import BertTokenizer
 import keyboard
-from adabound import AdaBound
 
 # HYPERPARAMS
 TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
@@ -70,7 +70,7 @@ K_THREAD.start()
 
 def weights_init(m):
     if isinstance(m, nn.Linear):
-        nn.init.xavier_uniform_(m.weight)
+        nn.init.kaiming_uniform_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
 
@@ -120,7 +120,7 @@ class FeedForwardLayer(nn.Module):  # FORWARD PASS LAYER
         super().__init__()
         self.ff = nn.Sequential(
             nn.Linear(d_m, 4 * d_m),
-            nn.GELU(),
+            nn.LeakyReLU(negative_slope=0.05),
             nn.Linear(4 * d_m, d_m)
         )
 
@@ -226,9 +226,10 @@ class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
 
 
 class Transformer(nn.Module):
-    def __init__(self, src_size, d_m, heads, layers, dropout):
+    def __init__(self, src_size, d_m, heads, layers, max_s_length, dropout):
         super().__init__()
         self.enc_emb = nn.Embedding(src_size, d_m)
+        self.pos_enc = PositionalEncoding(d_m, max_s_length)
         self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, dropout) for _ in range(layers)])
         self.classifier = nn.Linear(d_m, CLASSES)
         dropout = 0.5
@@ -236,7 +237,7 @@ class Transformer(nn.Module):
 
     def forward(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
-        src_emb = self.dropout(self.enc_emb(src)).to(device)
+        src_emb = self.dropout(self.pos_enc(self.enc_emb(src))).to(device)
 
         enc_out = src_emb
         for enc_l in self.enc_l:
@@ -298,10 +299,6 @@ def train_model(model, train_dl, test_dl, criterion, optimizer, epochs):
             optimizer.step()
             total_loss += loss.item()
             batch += 1
-            if not EXIT_SIGNAL.empty():
-                save_checkpoint(epoch, batch, model, optimizer, loss)
-                print("Checkpoint saved.")
-                EXIT_SIGNAL.get()
 
         avg_loss = total_loss / len(train_dl)
         progress_bar.n = 0
@@ -337,9 +334,14 @@ def test_model(model, test_dl):
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, DROPOUT)
+MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
 MODEL.apply(weights_init)
-
+OPTIMIZER = AdaBound(MODEL.parameters(), lr=1e-5, final_lr=1e-3, weight_decay=0.003)
+for state in OPTIMIZER.state.values():
+    for k, v in state.items():
+        if torch.is_tensor(v):
+            state[k] = v.to(device)
+CRITERION = nn.CrossEntropyLoss()
 
 # USER INTERFACE
 print("What we are doing?")
@@ -350,14 +352,6 @@ choice = input("Choose option : ")
 # TEST AND TRAINING
 if choice == "1":
     EPOCHS = int(input("Set the number of epochs: "))
-    lr = float(input("Specify the learning rate: "))
-    w_d = float(input("Specify the weight decay: "))
-    OPTIMIZER = AdaBound(MODEL.parameters(), lr=lr, weight_decay=w_d)
-    for state in OPTIMIZER.state.values():
-        for k, v in state.items():
-            if torch.is_tensor(v):
-                state[k] = v.to(device)
-    CRITERION = nn.CrossEntropyLoss()
     train_model(MODEL, TRAIN_DL, VALIDATION_DL, CRITERION, OPTIMIZER, EPOCHS)
     torch.save(MODEL.state_dict(), 'adv_model.pth')
     print("The model saved successfully.")
@@ -366,4 +360,4 @@ elif choice == "2":
 elif choice == "3":
     MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
 else:
-    print("The Wrong Input, Please choose the 1-3.")
+    print("The Wrong Input, Please choose the 1 or 2.")
