@@ -13,12 +13,12 @@ import keyboard
 
 # HYPERPARAMS
 TK = BertTokenizer.from_pretrained('bert-base-uncased', return_tensors="pt")
-HEADS = 16
-D_MOD = 1024
+HEADS = 8
+IDS = 768
 LAYERS = 6
 CLASSES = 3
-B_SIZE = 8
-DROPOUT = 0.25
+B_SIZE = 32
+DROPOUT = 0.2
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 MAX_LENGTH = 512
 SRC_SIZE = TK.vocab_size
@@ -76,18 +76,18 @@ def weights_init(m):
 
 
 class MultiHeadAttention(nn.Module):  # THE NEURON ATTENTION
-    def __init__(self, d_m, heads):
+    def __init__(self, ids, heads):
         super().__init__()
-        assert d_m % heads == 0, "d_model must be divisible by num_heads"
+        assert ids % heads == 0, "d_model must be divisible by num_heads"
 
-        self.d_m = d_m
+        self.ids = ids
         self.heads = heads
-        self.d_k = d_m // heads
+        self.d_k = ids // heads
 
-        self.w_q = nn.Linear(d_m, d_m)
-        self.w_k = nn.Linear(d_m, d_m)
-        self.w_v = nn.Linear(d_m, d_m)
-        self.w_o = nn.Linear(d_m, d_m)
+        self.w_q = nn.Linear(ids, ids)
+        self.w_k = nn.Linear(ids, ids)
+        self.w_v = nn.Linear(ids, ids)
+        self.w_o = nn.Linear(ids, ids)
 
     def scaled_dot_product_attn(self, q, k, v, mask):
         attn_sc = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
@@ -98,12 +98,12 @@ class MultiHeadAttention(nn.Module):  # THE NEURON ATTENTION
         return out
 
     def split_heads(self, x):
-        batch_size, seq_length, d_m = x.size()
+        batch_size, seq_length, ids = x.size()
         return x.view(batch_size, seq_length, self.heads, self.d_k).transpose(1, 2)
 
     def combine_heads(self, x):
         batch_size, _, seq_length, d_k = x.size()
-        return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.d_m)
+        return x.transpose(1, 2).contiguous().view(batch_size, seq_length, self.ids)
 
     def forward(self, q, k, v, mask):
         q = self.split_heads(self.w_q(q))
@@ -116,12 +116,12 @@ class MultiHeadAttention(nn.Module):  # THE NEURON ATTENTION
 
 
 class FeedForwardLayer(nn.Module):  # FORWARD PASS LAYER
-    def __init__(self, d_m):
+    def __init__(self, ids):
         super().__init__()
         self.ff = nn.Sequential(
-            nn.Linear(d_m, 4 * d_m),
-            nn.LeakyReLU(negative_slope=0.05),
-            nn.Linear(4 * d_m, d_m)
+            nn.Linear(ids, 4 * ids),
+            nn.GELU(),
+            nn.Linear(4 * ids, ids)
         )
 
     def forward(self, x):
@@ -129,11 +129,11 @@ class FeedForwardLayer(nn.Module):  # FORWARD PASS LAYER
 
 
 class PositionalEncoding(nn.Module):         # WORD POSITION
-    def __init__(self, d_m, max_s_length):
+    def __init__(self, ids, max_s_length):
         super().__init__()
-        pe = torch.zeros(max_s_length, d_m)
+        pe = torch.zeros(max_s_length, ids)
         pos = torch.arange(0, max_s_length, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_m, 2).float() * -(math.log(10000.0) / d_m))
+        div_term = torch.exp(torch.arange(0, ids, 2).float() * -(math.log(10000.0) / ids))
         pe[:, 0::2] = torch.sin(pos * div_term)
         pe[:, 1::2] = torch.cos(pos * div_term)
         self.register_buffer('pe', pe.unsqueeze(0))
@@ -148,12 +148,12 @@ class PositionalEncoding(nn.Module):         # WORD POSITION
 
 
 class EncoderLayer(nn.Module):  # THE HIDDEN LAYER(ENCODE)
-    def __init__(self, d_m, heads, dropout):
+    def __init__(self, ids, heads, dropout):
         super().__init__()
-        self.self_attn = MultiHeadAttention(d_m, heads)
-        self.ff = FeedForwardLayer(d_m)
-        self.norm1 = nn.LayerNorm(d_m)
-        self.norm2 = nn.LayerNorm(d_m)
+        self.self_attn = MultiHeadAttention(ids, heads)
+        self.ff = FeedForwardLayer(ids)
+        self.norm1 = nn.LayerNorm(ids)
+        self.norm2 = nn.LayerNorm(ids)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, mask):
@@ -165,14 +165,14 @@ class EncoderLayer(nn.Module):  # THE HIDDEN LAYER(ENCODE)
 
 
 class DecoderLayer(nn.Module):    # THE HIDDEN LAYER(DECODE)
-    def __init__(self, d_m, heads, dropout):
+    def __init__(self, ids, heads, dropout):
         super().__init__()
-        self.self_attn = MultiHeadAttention(d_m, heads)
-        self.cross_attn = MultiHeadAttention(d_m, heads)
-        self.f_f = FeedForwardLayer(d_m)
-        self.norm1 = nn.LayerNorm(d_m)
-        self.norm2 = nn.LayerNorm(d_m)
-        self.norm3 = nn.LayerNorm(d_m)
+        self.self_attn = MultiHeadAttention(ids, heads)
+        self.cross_attn = MultiHeadAttention(ids, heads)
+        self.f_f = FeedForwardLayer(ids)
+        self.norm1 = nn.LayerNorm(ids)
+        self.norm2 = nn.LayerNorm(ids)
+        self.norm3 = nn.LayerNorm(ids)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, enc_out, src_mask, tgt_mask):
@@ -186,16 +186,16 @@ class DecoderLayer(nn.Module):    # THE HIDDEN LAYER(DECODE)
 
 
 class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
-    def __init__(self, src_size, tgt_size, d_m, heads, layers, max_s_length, dropout):
+    def __init__(self, src_size, tgt_size, ids, heads, layers, max_s_length, dropout):
         super().__init__()
-        self.enc_emb = nn.Embedding(src_size, d_m)
-        self.dec_emb = nn.Embedding(tgt_size, d_m)
-        self.pos_enc = PositionalEncoding(d_m, max_s_length)
+        self.enc_emb = nn.Embedding(src_size, ids)
+        self.dec_emb = nn.Embedding(tgt_size, ids)
+        self.pos_enc = PositionalEncoding(ids, max_s_length)
 
-        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, dropout) for _ in range(layers)])
-        self.dec_l = nn.ModuleList([DecoderLayer(d_m, heads, dropout) for _ in range(layers)])
+        self.enc_l = nn.ModuleList([EncoderLayer(ids, heads, dropout) for _ in range(layers)])
+        self.dec_l = nn.ModuleList([DecoderLayer(ids, heads, dropout) for _ in range(layers)])
 
-        self.classifier = nn.Linear(d_m, CLASSES)
+        self.classifier = nn.Linear(ids, CLASSES)
         self.dropout = nn.Dropout(dropout)
 
     @staticmethod
@@ -226,18 +226,17 @@ class Transformer_Generate(nn.Module):           # ARCHITECTURE FOR TRAINING
 
 
 class Transformer(nn.Module):
-    def __init__(self, src_size, d_m, heads, layers, max_s_length, dropout):
+    def __init__(self, src_size, ids, heads, layers, dropout):
         super().__init__()
-        self.enc_emb = nn.Embedding(src_size, d_m)
-        self.pos_enc = PositionalEncoding(d_m, max_s_length)
-        self.enc_l = nn.ModuleList([EncoderLayer(d_m, heads, dropout) for _ in range(layers)])
-        self.classifier = nn.Linear(d_m, CLASSES)
-        dropout = 0.5
+        self.enc_emb = nn.Embedding(src_size, ids)
+        self.enc_l = nn.ModuleList([EncoderLayer(ids, heads, dropout) for _ in range(layers)])
+        self.classifier = nn.Linear(ids, CLASSES)
+        dropout = 0.1
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, src):
         src_mask = (src != 0).unsqueeze(1).unsqueeze(2).to(device)
-        src_emb = self.dropout(self.pos_enc(self.enc_emb(src))).to(device)
+        src_emb = self.dropout(self.enc_emb(src)).to(device)
 
         enc_out = src_emb
         for enc_l in self.enc_l:
@@ -334,9 +333,9 @@ def test_model(model, test_dl):
 # MODEL INIT, OPTIMIZER, CRITERION
 
 
-MODEL = Transformer(SRC_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
+MODEL = Transformer(SRC_SIZE, IDS, HEADS, LAYERS, DROPOUT)
 MODEL.apply(weights_init)
-OPTIMIZER = AdaBound(MODEL.parameters(), lr=1e-5, final_lr=1e-3, weight_decay=0.003)
+OPTIMIZER = AdaBound(MODEL.parameters(), lr=1e-5, final_lr=1e-3, weight_decay=0.01)
 for state in OPTIMIZER.state.values():
     for k, v in state.items():
         if torch.is_tensor(v):
@@ -358,6 +357,6 @@ if choice == "1":
 elif choice == "2":
     test_model(MODEL, TEST_DL)
 elif choice == "3":
-    MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, D_MOD, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
+    MODEL = Transformer_Generate(SRC_SIZE, TGT_SIZE, IDS, HEADS, LAYERS, MAX_LENGTH, DROPOUT)
 else:
     print("The Wrong Input, Please choose the 1 or 2.")
